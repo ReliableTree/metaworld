@@ -56,7 +56,7 @@ import importlib
 import sys
 
 from tests.metaworld.envs.mujoco.sawyer_xyz import utils
-sys.path.append('/home/hendrik/Documents/master_project/LanguagePolicies/')
+sys.path.append('/home/hendrik/Documents/master_project/Code/LanguagePolicies/')
 from model_src.modelTorch import PolicyTranslationModelTorch
 from utils.networkTorch import NetworkTorch
 import hashids
@@ -91,6 +91,7 @@ WEIGHT_PHS      = 50 #1.0
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 
+
 def count_parameters(model):
     table = PrettyTable(["Modules", "Parameters"])
     total_params = 0
@@ -107,7 +108,8 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
     model   = PolicyTranslationModelTorch(od_path="", model_setup=model_setup).to(device)
     ptd = '/home/hendrik/Documents/master_project/LokalData/metaworld/pick-place/training_data/'
     train_data = TorchDatasetMW(path=ptd, device=device)
-    print(len(train_data))
+
+    print(f'len(train_data): {len(train_data)}')
 
     #train_data = torch.utils.data.Subset(train_data, train_indices).to(device)
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
@@ -126,6 +128,7 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
     #network.load_state_dict(torch.load(MODEL_PATH), strict=True)
     network.train(epochs=epochs, model_params=model_setup)
     return network
+
 import os
 if __name__ == '__main__':
     args = sys.argv[1:]
@@ -153,7 +156,6 @@ if __name__ == '__main__':
                 setup_path = args[args.index('-model') + 1] + 'model_setup.pkl'
                 with open(setup_path, 'rb') as f:
                     model_setup = pickle.load(f)
-                model_setup['use_memory'] = True
                 model_setup['train']      = True
                 print('load model')
 

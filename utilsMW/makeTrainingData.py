@@ -1,18 +1,17 @@
-from binascii import a2b_base64, a2b_hex
 import imp
 from sys import path
 from time import sleep
-from tkinter.messagebox import NO
 import metaworld
 import random
-from metaworld.policies.sawyer_pick_place_v2_policy import SawyerPickPlaceV2Policy
+#from metaworld.policies.sawyer_pick_place_v2_policy import SawyerPickPlaceV2Policy
+#from metaworld.policies.sawyer_basketball_v2_policy import SawyerBasketballV2Policy
+#from metaworld.policies.sawyer_assembly_v2_policy import SawyerAssemblyV2Policy
+#from metaworld.policies.sawyer_box_close_v2_policy import SawyerBoxCloseV2Policy
+from metaworld.policies import *
 import torch
 import numpy as np
 import os
 import numpy as np
-import torch
-
-from metaworld.policies.sawyer_door_open_v2_policy import SawyerDoorOpenV2Policy
 
 from metaworld.envs import (ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE,
                             ALL_V2_ENVIRONMENTS_GOAL_HIDDEN)
@@ -35,34 +34,53 @@ class MakeTrainingData():
         else:
             self.data[name] = np.concatenate((self.data[name], data))
 
-    def collect_training_data(self):
+    def collect_training_data(self, render = False, steps=500):
+        import time
         gt_policy = self.gt_policy
-        print(f'num training: {self.training_examples}')
-        max_len = 0
-        for scene in range(self.training_examples):
-            env = self.environment()
-            print(scene)
-            self.data['obs_memory'] = None
-            self.data['actions'] = None
-            self.data['reward'] = None
-            obs = env.reset()  # Reset environment
+        #print(f'num training: {self.training_examples}')
+        reward = 0
+        tries = 0
+        while reward < 10 and tries < 10:
+            tries +=1 
+            for scene in range(self.training_examples):
+                env = self.environment()
+                #print(scene)
+                self.data['obs_memory'] = None
+                self.data['actions'] = None
+                self.data['reward'] = None
+                obs = env.reset()  # Reset environment
+                step = 0
+                reward = 0
+                while step < steps and reward < 10:
+                    step += 1
+                    a = gt_policy.get_action(obs)
+                    obs, reward, done, info = env.step(a)  # Step the environoment with the sampled random action
+                    if render:
+                        time.sleep(0.05)
+                        env.render()
+                    obs_dict = gt_policy._parse_obs(obs)
+                    obs_arr = np.zeros(14)
+                    pointer = 0
+                    for key in obs_dict:
+                        if not (('unused' in key) or ('extra' in key) or ('_prev_obs' in key)):
+                            len_data = obs_dict[key].shape
+                            if len(len_data) != 0:
+                                len_data = len_data[0]
+                            else:
+                                len_data = 1
+                            obs_arr[pointer:pointer+len_data] = obs_dict[key]
+                            pointer += len_data
 
-            for i in range(200):
-                a = gt_policy.get_action(obs)
-                obs, reward, done, info = env.step(a)  # Step the environoment with the sampled random action
-                obs_dict = gt_policy._parse_obs(obs)
-                obs_arr = np.concatenate((obs_dict['hand_pos'], obs_dict['puck_pos'], obs_dict['puck_rot'], obs_dict['goal_pos']), axis=0)
-                self.make_np_array(name='obs_memory', data=obs_arr)
-                self.make_np_array(name='actions', data=a)
-                self.make_np_array(name='reward', data = reward/10)
-            print(f'reward:{reward}')
-            if i > max_len:
-                max_len = i
-            if reward >= 9.5:
-                self.make_np_array('training_data', data=self.data['obs_memory'])
-                self.make_np_array('training_label', data=self.data['actions'])
-                self.make_np_array('training_reward', data=self.data['reward'])
-        print('max len {max_len}')
+                    #self.make_np_array(name='obs_memory', data=obs_arr)
+                    #self.make_np_array(name='actions', data=a)
+                    #self.make_np_array(name='reward', data = reward/10)
+                print(f'reward:{reward}')
+            #if i > max_len:
+            #    max_len = i
+            #if reward >= 9.5:
+            #    self.make_np_array('training_data', data=self.data['obs_memory'])
+            #    self.make_np_array('training_label', data=self.data['actions'])
+            #    self.make_np_array('training_reward', data=self.data['reward'])
     def save(self, path):
         if not os.path.exists(path):
             os.makedirs(path)
@@ -75,15 +93,45 @@ class DefaultTraining():
     def __init__(self) -> None:
         pass
     
-    def apply(self):
-        gt_policy = SawyerPickPlaceV2Policy()
-        door_open_goal_observable_cls = ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE["pick-place-v2-goal-observable"]
+    def apply(self, scene, policy):
 
-        mtd = MakeTrainingData(gt_policy, environment = door_open_goal_observable_cls, training_examples= 200)
-        mtd.collect_training_data()
-        mtd.save(path='/home/hendrik/Documents/master_project/LokalData/metaworld/pick-place/training_data/')
+        env = ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE[scene]
+
+        mtd = MakeTrainingData(policy, environment = env, training_examples= 20000)
+        mtd.collect_training_data(render=True)
+        #path = '/home/hendrik/Documents/master_project/LokalData/metaworld/pick-place/training_data/'
+        path = '/home/hendrik/Documents/master_project/LokalData/metaworld/test/training_data/'
+        mtd.save(path=path)
+
+def make_policy_dict():
+    policy_dict = {}
+    for key in ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE:
+        key_replaced = key.replace('-', '_')
+        string_arr = key.split('-')
+        v2_ind = string_arr.index('v2')
+        string_arr = string_arr[:v2_ind]
+        for i, string in enumerate(string_arr):
+            string_arr[i] = string.capitalize()
+        policy_name = 'policy_dict["' + key_replaced + '_policy"] = [Sawyer'
+        for string in string_arr:
+            policy_name += string
+        policy_name += 'V2Policy(), "' + key + '"]'
+        try:
+            exec(policy_name)
+        except (NameError):
+            pass
+    return policy_dict
 
 if __name__ == '__main__':
     DT = DefaultTraining()
-    DT.apply()
-    print('ASD')
+    policy_dict = make_policy_dict()
+    max_len_a = 0
+    for policy in policy_dict:
+        gt_policy = policy_dict[policy][0]
+        env_name = policy_dict[policy][1]
+        print(env_name)
+        env = ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE[env_name]
+        MTD = MakeTrainingData(gt_policy, env, 1)
+        la = MTD.collect_training_data(steps= 500)
+
+

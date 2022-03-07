@@ -22,7 +22,6 @@ class TorchDatasetMW(torch.utils.data.Dataset):
 
 if __name__ == '__main__':
     ptd = '/home/hendrik/Documents/master_project/LokalData/metaworld/pick-place/training_data/'
-    ptl = '/home/hendrik/Documents/master_project/LokalData/metaworld/training_data/training_label'
     TD = TorchDatasetMW(path=ptd)
     train_loader = DataLoader(TD, batch_size=16, shuffle=True)
     print(len(train_loader))

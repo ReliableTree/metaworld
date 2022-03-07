@@ -35,9 +35,9 @@ model_setup = {
                 'num_upconvs':5,
                 'stride':3,
                 'd_output':5,
-                'nhead':4,
-                'd_hid':40,
-                'nlayers':2
+                'nhead':6,
+                'd_hid':60,
+                'nlayers':4
             },
         }
 
