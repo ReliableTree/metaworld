@@ -25,7 +25,7 @@ from gym import logger
 
 
 # Learning rate for the adam optimizer
-LEARNING_RATE   = 0.0001
+LEARNING_RATE   = 0.001
 # Weight for the attention loss
 WEIGHT_ATTN     = 1.0
 # Weight for the motion primitive weight loss
