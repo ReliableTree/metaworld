@@ -106,32 +106,70 @@ class DefaultTraining():
 def make_policy_dict():
     policy_dict = {}
     for key in ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE:
-        key_replaced = key.replace('-', '_')
         string_arr = key.split('-')
         v2_ind = string_arr.index('v2')
         string_arr = string_arr[:v2_ind]
+        policy_name = ''
         for i, string in enumerate(string_arr):
+            policy_name+=string
             string_arr[i] = string.capitalize()
-        policy_name = 'policy_dict["' + key_replaced + '_policy"] = [Sawyer'
+        #policy_name = 'policy_dict["' + key_replaced + '_policy"] = [Sawyer'
+        entry = 'policy_dict["' + str(policy_name) + '"] = [Sawyer'
         for string in string_arr:
-            policy_name += string
-        policy_name += 'V2Policy(), "' + key + '"]'
+            entry += string
+        entry += 'V2Policy(), "' + key + '"]'
         try:
-            exec(policy_name)
+            exec(entry)
         except (NameError):
             pass
     return policy_dict
 
+
+class SuccessSimulation():
+    def __init__(self, device='cpu') -> None:
+        self.policy_dict = make_policy_dict()
+
+    def get_success(self, policy, env_tag, n):
+        env_name = self.policy_dict[env_tag][1]
+        env = ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE[env_name]()
+        gt_policy = self.policy_dict[env_tag][0]
+        trajectories = []
+        inpt_obs = []
+        success = []
+        for i in range(n):
+            obs = env.reset()  # Reset environment
+            obs_dict = gt_policy._parse_obs(obs)
+            obs_arr = np.concatenate((obs_dict['hand_pos'], obs_dict['puck_pos'], obs_dict['puck_rot'], obs_dict['goal_pos']), axis=0)
+            obs_arr = torch.tensor(obs_arr, dtype = torch.float, device = policy.device).reshape(1,1,-1)
+            inpt_obs.append(obs_arr)
+            result = policy.forward(obs_arr)['gen_trj'].detach()
+            trajectories += [result]
+            np_result = result.cpu().detach().numpy()
+
+            for a in np_result[0]:
+                obs, reward, done, info = env.step(a)  # Step the environoment with the sampled random action
+                #env.render()
+            if reward >= 0.95:
+                success.append(torch.ones(1, device=policy.device))
+            else:
+                success.append(torch.zeros(1, device=policy.device))
+        trajectories = torch.cat([*trajectories], dim=0)
+        inpt_obs = torch.cat([*inpt_obs], dim=0)
+        success = torch.cat([*success], dim=0)
+        return torch.tensor(trajectories), torch.tensor(inpt_obs), torch.tensor(success)
+
+
 if __name__ == '__main__':
     DT = DefaultTraining()
     policy_dict = make_policy_dict()
-    max_len_a = 0
+    print(policy_dict)
+    '''max_len_a = 0
     for policy in policy_dict:
         gt_policy = policy_dict[policy][0]
         env_name = policy_dict[policy][1]
         print(env_name)
         env = ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE[env_name]
         MTD = MakeTrainingData(gt_policy, env, 1)
-        la = MTD.collect_training_data(steps= 500)
+        la = MTD.collect_training_data(steps= 500)'''
 
 

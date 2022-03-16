@@ -5,7 +5,6 @@ model_setup = {
     'use_memory' : False,
     'meta_world' : {
         'use'   :True,
-        'seq_len': 200
     },
     'lang_trans' :  {
         'use_lang_trans' : True,
@@ -15,35 +14,32 @@ model_setup = {
         'nlayers'  : 2,
         'bottleneck' : False
     },
-    'contr_trans': {
-        'use_contr_trans':True,
-        'd_output'   : 5,
-        'd_model'    : 210,
-        'nhead'      : 6,
-        'nlayers'    : 4,
-        'recursive'    : False,
-        'use_gen2'     : False,
-        'use_mask'     : False,
-        'use_counter_embedding': False,
-        'count_emb_dim' : 20,
-        'predictionNN'  : False,
-        'plan_nn'       : {
-            'use_plan_nn'   : True,
-            'plan'     :{
+    'plan_nn'       : {
+        'use_plan_nn'   : True,
+        'plan'     :{
+            'use_layernorm':False,
+            'upconv' : True,
+            'num_upconvs':5,
+            'stride':3,
+            'd_output':5,
+            'nhead':6,
+            'd_hid':60,
+            'nlayers':4,
+            'seq_len': 200,
+            'dilation' : 2
+        },
+    },
+    'tailor_transformer': {
                 'use_layernorm':False,
-                'plan_type' : 'upconv',
-                'num_upconvs':5,
+                'upconv' : False,
+                'num_upconvs':4,
                 'stride':3,
                 'd_output':5,
+                'd_model' : 60,
                 'nhead':6,
                 'd_hid':60,
-                'nlayers':4
-            },
-        }
-
-    },
-    'LSTM':{
-        'use_LSTM' : False
+                'nlayers':4,
+                'd_result':1
     },
     'quick_val':False,
     'val_every' : 20
