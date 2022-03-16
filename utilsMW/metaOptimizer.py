@@ -41,16 +41,17 @@ class TaylorSignalModule(SignalModule):
         #print(f'inpt obsv: {inpt_obs.shape}')
         #print(f'trajectories: {trajectories.shape}')
         inpt_super = torch.concat((trajectories, inpt_obs), dim = -1)
+        #print(f'inpt_super obs shape: {inpt_super.shape}')
 
         #print(f'invalue: {in_value}')
         return super().forward(inpt_super)
 
-    def signal_fct_tailor(self, inpt):
-        return self.loss_fct(inpt['tailor_result'], 0)
+    #def signal_fct_tailor(self, inpt):
+    #    return self.loss_fct(inpt['tailor_result'], 0)
 
     def loss_fct_tailor(self, inpt, label):
-        #label must be 0, if sucess and 1, otherwise
-        return ((inpt - label)**2).mean()
+        #label = 1 means success
+        return ((inpt['tailor_result'] - label)**2).mean()
 
 
 def meta_optimizer(main_module, tailor_modules, inpt, d_out, epoch, debug_second, force_tailor_improvement, model_params):
@@ -90,9 +91,9 @@ def meta_optimizer(main_module, tailor_modules, inpt, d_out, epoch, debug_second
             tailor_inpt['result'] = proto_result['gen_trj']
             tailor_inpt['inpt'] = inpt
             tailor_result = higher_tailor_sig.forward(tailor_inpt)
-            tailor_signal_input = {}
-            tailor_signal_input['tailor_result'] = tailor_result
-            tailor_loss = higher_tailor_sig.signal_fct_tailor(tailor_signal_input)
+            tailor_loss_input = {}
+            tailor_loss_input['tailor_result'] = tailor_result
+            tailor_loss = higher_tailor_sig.loss_fct_tailor(inpt = tailor_loss_input, label = torch.ones_like(inpt))
             debug_dict['tailor_loss'] = tailor_loss
             #print(f'tailor loss: {tailor_loss}')
             #optimize main by tailor loss
@@ -105,13 +106,6 @@ def meta_optimizer(main_module, tailor_modules, inpt, d_out, epoch, debug_second
         #print(f'result shape: {result["gen_trj"].shape}')
         #print(f'result: {result}')
         loss, debug_dict_main = higher_main.loss_fct(d_out = d_out, result=result, model_params=model_params)
-        '''if inner_loop%5==0:
-            print(f'proto loss: {proto_loss_dt}')
-            print(f'loss: {loss}')
-            print(f'diff: {loss-proto_loss}')
-            print(f'inner loop: {inner_loop}')
-            print(f'condition: {(proto_loss_dt < loss_dt) and first_run}')
-            print('______________________________________________--')'''
         debug_dict['meta_diff'] = proto_loss-loss
         debug_dict.update(debug_dict_main)
         loss_dt = loss.detach()
@@ -131,19 +125,19 @@ def meta_optimizer(main_module, tailor_modules, inpt, d_out, epoch, debug_second
 
     return main_module, tailor_modules, result, debug_dict
 
-def tailor_optimizer(tailor_modules, inpt, label):
+def tailor_optimizer(tailor_modules, trajectories, inpt, label):
     debug_dict = {}
     for tailor_module in tailor_modules:
         tailor_module.meta_optimizer.zero_grad()
         tailor_inpt = {}
-        tailor_inpt['result'] = inpt
+        tailor_inpt['result'] = trajectories
+        tailor_inpt['inpt'] = inpt
         tailor_result = tailor_module.forward(tailor_inpt)
-        tailor_signal_input = {}
-        tailor_signal_input['tailor_result'] = tailor_result
-        tailor_signal = tailor_module.signal_fct_tailor(tailor_signal_input)
-        tailor_loss = tailor_module.loss_fct_tailor(tailor_signal, label)
+        tailor_loss_input = {}
+        tailor_loss_input['tailor_result'] = tailor_result
+        tailor_loss = tailor_module.loss_fct_tailor(inpt = tailor_loss_input, label = label)
         tailor_loss.backward()
-        tailor_module.optimizer.step()
+        tailor_module.meta_optimizer.step()
         debug_dict['tailor_module'] = tailor_loss.detach()
     return debug_dict
 

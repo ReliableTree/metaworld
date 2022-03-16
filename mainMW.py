@@ -20,6 +20,7 @@ import pickle
 from utilsMW.model_setup import model_setup
 from utilsMW.dataLoaderMW import TorchDatasetMW
 from torch.utils.data import DataLoader
+from gym import logger
 
 
 
@@ -86,6 +87,7 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
 
 import os
 if __name__ == '__main__':
+    logger.set_level(40)
     args = sys.argv[1:]
     if '-path' not in args:
         print('no path given, not executing code')

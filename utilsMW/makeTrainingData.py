@@ -156,7 +156,7 @@ class SuccessSimulation():
         trajectories = torch.cat([*trajectories], dim=0)
         inpt_obs = torch.cat([*inpt_obs], dim=0)
         success = torch.cat([*success], dim=0)
-        return torch.tensor(trajectories), torch.tensor(inpt_obs), torch.tensor(success)
+        return trajectories, inpt_obs, success
 
 
 if __name__ == '__main__':
