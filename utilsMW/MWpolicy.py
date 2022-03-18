@@ -32,6 +32,12 @@ class MWpolicy():
             model_setup = pickle.load(f)
         model_setup['use_memory'] = True
         model_setup['train']      = True
+        model_setup['plan_nn'] = model_setup['contr_trans']['plan_nn']
+        model_setup['plan_nn']['plan']['upconv'] = True
+        model_setup['plan_nn']['plan']['seq_len'] = model_setup['meta_world']['seq_len']
+        model_setup['plan_nn']['plan']['dilation'] = 2
+        #model_setup['meta_world']['seq_len'] = model_setup['contr_trans']['plan_nn']['plan']['seq_len']
+        print(model_setup)
         print('load model')
         self.model = self.setupModel(device, model_path=model_path, model_setup=model_setup, obs=obs)
 
@@ -49,21 +55,25 @@ class MWpolicy():
 import time
 class ApplyMWPolcy():
     def __init__(self) -> None:
-        door_open_goal_observable_cls = ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE["pick-place-v2-goal-observable"]
+        #door_open_goal_observable_cls = ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE["pick-place-v2-goal-observable"]
+        door_open_goal_observable_cls = ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE["door-open-v2-goal-observable"]
         gt_policy = SawyerPickPlaceV2Policy()
+        gt_policy = SawyerDoorOpenV2Policy()
         succ = np.zeros(0)
         env = door_open_goal_observable_cls()
-        obs = env.reset()  # Step the environoment with the sampled random action
-        obs_dict = gt_policy._parse_obs(obs)
-        obs_arr = np.concatenate((obs_dict['hand_pos'], obs_dict['puck_pos'], obs_dict['puck_rot'], obs_dict['goal_pos']), axis=0)
-        obs_arr = torch.tensor(obs_arr, dtype = torch.float).reshape(1,1,-1)
-        mwPolicy = MWpolicy(obs_arr)
+        #obs = env.reset()  # Step the environoment with the sampled random action
+        #obs_dict = gt_policy._parse_obs(obs)
+        #obs_arr = np.concatenate((obs_dict['hand_pos'], obs_dict['puck_pos'], obs_dict['puck_rot'], obs_dict['goal_pos']), axis=0)
+        #obs_arr = torch.tensor(obs_arr, dtype = torch.float).reshape(1,1,-1)
+        #mwPolicy = MWpolicy(obs_arr)
         for i in range(1000):
             env = door_open_goal_observable_cls()
             obs = env.reset()
             for j in range(200):
                 a = gt_policy.get_action(obs)
                 obs, reward, done, info = env.step(a)
+                env.render()
+                time.sleep(0.1)
             if reward >= 0.95:
                 succ = np.append(succ, 1)
             else:
@@ -72,7 +82,7 @@ class ApplyMWPolcy():
         print(f'std final: {np.std(succ)}')
         succ = np.zeros(0)
 
-
+        '''
         for i in range(1000):
             env = door_open_goal_observable_cls()
             obs = env.reset()  # Step the environoment with the sampled random action
@@ -82,14 +92,15 @@ class ApplyMWPolcy():
             result = mwPolicy.model.forward(obs_arr)['gen_trj'].detach().numpy()
             for a in result[0]:
                 obs, reward, done, info = env.step(a)  # Step the environoment with the sampled random action
-                #env.render()
+                env.render()
+                time.sleep(0.1)
             if reward >= 0.95:
                 succ = np.append(succ, 1)
             else:
                 succ = np.append(succ, 0)
         print(f'success rate final: {succ.mean()}')
         print(f'std final: {np.std(succ)}')
-
+'''
 
     def make_np_array(self, name, data):
         data = np.expand_dims(data, axis=0)

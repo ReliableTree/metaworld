@@ -31,3 +31,15 @@ if __name__ == '__main__':
 
         break
 
+class TorchDatasetTailor(torch.utils.data.Dataset):
+    def __init__(self, trajectories, obsv, success) -> None:
+        super().__init__()
+        self.trajectories = trajectories
+        self.obsv = obsv
+        self.success = success
+
+    def __len__(self):
+        return len(self.trajectories)
+
+    def __getitem__(self, index):
+        return self.trajectories[index], self.obsv[index], self.success[index]
