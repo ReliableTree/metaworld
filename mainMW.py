@@ -25,7 +25,7 @@ from gym import logger
 
 
 # Learning rate for the adam optimizer
-LEARNING_RATE   = 0.001
+LEARNING_RATE   = 0.00005
 # Weight for the attention loss
 WEIGHT_ATTN     = 1.0
 # Weight for the motion primitive weight loss
@@ -60,6 +60,7 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
     model   = PolicyTranslationModelTorch(od_path="", model_setup=model_setup, device=device).to(device)
 
     tailor_model = TailorTransformer(model_setup=model_setup['tailor_transformer'])
+
     tailor_models = [tailor_model]
     #tailor_models=[]
     train_data = TorchDatasetMW(path=path_dict['META_WORLD'], device=device)
@@ -79,6 +80,8 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
     if model_path is not None:
         model.load_state_dict(torch.load(model_path, map_location='cuda:0'))
     count_parameters(network)
+    print('in tailor transfo:')
+    count_parameters(tailor_model)
 
     #print(f'number of param,eters in net: {len(list(network.parameters()))} and number of applied: {i}')
     #network.load_state_dict(torch.load(MODEL_PATH), strict=True)
