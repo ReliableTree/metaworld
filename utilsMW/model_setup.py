@@ -22,9 +22,10 @@ model_setup = {
             'num_upconvs':5,
             'stride':3,
             'd_output':5,
-            'nhead':6,
-            'd_hid':60,
-            'nlayers':4,
+            'nhead':10,
+            'd_hid':200,
+            'd_model' : 200,
+            'nlayers':6,
             'seq_len': 200,
             'dilation' : 2
         },
@@ -39,8 +40,10 @@ model_setup = {
                 'nhead':6,
                 'd_hid':60,
                 'nlayers':4,
-                'd_result':1
+                'd_result':1,
+                'seq_len': 200,
+
     },
     'quick_val':False,
-    'val_every' : 20
+    'val_every' : 4
 }

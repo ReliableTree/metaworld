@@ -1,5 +1,7 @@
 from sys import prefix
 from time import perf_counter
+
+from numpy import NaN
 import higher
 import torch
 import torch.nn as nn
@@ -38,20 +40,28 @@ class TaylorSignalModule(SignalModule):
         trajectories = inpt['result']
         inpt_obs = inpt['inpt'][:,:1]
         inpt_obs = inpt_obs.repeat((1, trajectories.size(1), 1))
-        #print(f'inpt obsv: {inpt_obs.shape}')
-        #print(f'trajectories: {trajectories.shape}')
         inpt_super = torch.concat((trajectories, inpt_obs), dim = -1)
+        #print(f'max {inpt_super.max()}')
+        #print(f'min: {inpt_super.min()}')
         #print(f'inpt_super obs shape: {inpt_super.shape}')
 
         #print(f'invalue: {in_value}')
-        return super().forward(inpt_super)
-
+        #inpt shape: batch, seq, dim
+        result =  super().forward(inpt_super)
+        return result
     #def signal_fct_tailor(self, inpt):
     #    return self.loss_fct(inpt['tailor_result'], 0)
 
     def loss_fct_tailor(self, inpt, label):
         #label = 1 means success
-        return ((inpt['tailor_result'] - label)**2).mean()
+        label = label.reshape(-1)
+        inpt = inpt['tailor_result'].reshape(-1)
+        loss_positive = ((inpt[label==0] - label[label==0])**2)
+        loss_negative = ((inpt[label==1] - label[label==1])**2)
+        loss = loss_positive.mean() + loss_negative.mean()
+        #loss = (inpt['tailor_result'].reshape(-1) - label)**2
+        #print(f'loss.shape {loss.shape}')
+        return loss.mean()
 
 
 def meta_optimizer(main_module, tailor_modules, inpt, d_out, epoch, debug_second, force_tailor_improvement, model_params):
@@ -93,7 +103,7 @@ def meta_optimizer(main_module, tailor_modules, inpt, d_out, epoch, debug_second
             tailor_result = higher_tailor_sig.forward(tailor_inpt)
             tailor_loss_input = {}
             tailor_loss_input['tailor_result'] = tailor_result
-            tailor_loss = higher_tailor_sig.loss_fct_tailor(inpt = tailor_loss_input, label = torch.ones_like(inpt))
+            tailor_loss = higher_tailor_sig.loss_fct_tailor(inpt = tailor_loss_input, label = torch.ones_like(tailor_result))
             debug_dict['tailor_loss'] = tailor_loss
             #print(f'tailor loss: {tailor_loss}')
             #optimize main by tailor loss
@@ -136,9 +146,10 @@ def tailor_optimizer(tailor_modules, trajectories, inpt, label):
         tailor_loss_input = {}
         tailor_loss_input['tailor_result'] = tailor_result
         tailor_loss = tailor_module.loss_fct_tailor(inpt = tailor_loss_input, label = label)
-        tailor_loss.backward()
-        tailor_module.meta_optimizer.step()
-        debug_dict['tailor_module'] = tailor_loss.detach()
+        if not torch.isnan(tailor_loss):
+            tailor_loss.backward()
+            tailor_module.meta_optimizer.step()
+            debug_dict['tailor_module'] = tailor_loss.detach()
     return debug_dict
 
 

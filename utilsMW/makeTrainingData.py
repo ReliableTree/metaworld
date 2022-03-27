@@ -131,12 +131,12 @@ class SuccessSimulation():
 
     def get_success(self, policy, env_tag, n):
         env_name = self.policy_dict[env_tag][1]
-        env = ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE[env_name]()
         gt_policy = self.policy_dict[env_tag][0]
         trajectories = []
         inpt_obs = []
         success = []
         for i in range(n):
+            env = ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE[env_name]()
             obs = env.reset()  # Reset environment
             obs_dict = gt_policy._parse_obs(obs)
             obs_arr = np.concatenate((obs_dict['hand_pos'], obs_dict['puck_pos'], obs_dict['puck_rot'], obs_dict['goal_pos']), axis=0)
