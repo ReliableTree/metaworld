@@ -34,12 +34,21 @@ if __name__ == '__main__':
 class TorchDatasetTailor(torch.utils.data.Dataset):
     def __init__(self, trajectories, obsv, success) -> None:
         super().__init__()
-        self.trajectories = trajectories
-        self.obsv = obsv
-        self.success = success
+        self.s_trajectories = trajectories[success==1]
+        self.s_obsv = obsv[success==1]
+        self.success = success[success==1]
+
+        self.f_trajectories = trajectories[success==0]
+        self.f_obsv = obsv[success==0]
+        self.fail = success[success==0]
+
+        self.s_len = len(self.success)
+        self.f_len = len(self.fail)
+        self.len = max(self.s_len, self.f_len)
 
     def __len__(self):
-        return len(self.trajectories)
+        return self.len
 
     def __getitem__(self, index):
-        return self.trajectories[index], self.obsv[index], self.success[index]
+        return (self.s_trajectories[index%self.s_len], self.s_obsv[index%self.s_len], self.success[index%self.s_len]),\
+             (self.f_trajectories[index%self.f_len], self.f_obsv[index%self.f_len], self.fail[index%self.f_len])

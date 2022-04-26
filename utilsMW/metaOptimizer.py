@@ -135,8 +135,13 @@ def meta_optimizer(main_module, tailor_modules, inpt, d_out, epoch, debug_second
 
     return main_module, tailor_modules, result, debug_dict
 
-def tailor_optimizer(tailor_modules, trajectories, inpt, label):
+def tailor_optimizer(tailor_modules, succ, failed):
     debug_dict = {}
+    s_trj, s_obs, success = succ
+    f_trj, f_obs, fail = failed
+    trajectories = torch.cat((s_trj, f_trj), dim=0)
+    inpt = torch.cat((s_obs, f_obs), dim=0)
+    label = torch.cat((success, fail), dim=0)
     for tailor_module in tailor_modules:
         tailor_module.meta_optimizer.zero_grad()
         tailor_inpt = {}
