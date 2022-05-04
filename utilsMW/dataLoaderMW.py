@@ -12,24 +12,31 @@ class TorchDatasetMW(torch.utils.data.Dataset):
       self.label = torch.load(path_label).to(torch.float32).to(device)
       self.phase = torch.load(path_phase).to(torch.float32).to(device)
 
+      self.data = torch.cat((self.data, self.phase), dim=-1)
+
   def __len__(self):
         'Denotes the total number of samples'
         return len(self.data)
 
   def __getitem__(self, index):
         'Generates one sample of data'
-        return self.data[index], (self.label[index], self.phase[index])
+        return self.data[index], self.label[index]
 
-if __name__ == '__main__':
-    ptd = '/home/hendrik/Documents/master_project/LokalData/metaworld/pick-place/training_data/'
-    TD = TorchDatasetMW(path=ptd)
-    train_loader = DataLoader(TD, batch_size=16, shuffle=True)
-    print(len(train_loader))
-    for step, (d, l) in enumerate(train_loader):
-        print(d.shape)
-        print(l.shape)
+class TorchDatasetMWToy(torch.utils.data.Dataset):
+  def __init__(self, path, device = 'cpu'):
+      path_data = path + 'inpt'
+      path_label = path + 'label'
+      self.data = torch.load(path_data).to(torch.float32).to(device)
+      self.label = torch.load(path_label).to(torch.float32).to(device)
+      
 
-        break
+  def __len__(self):
+        'Denotes the total number of samples'
+        return len(self.data)
+
+  def __getitem__(self, index):
+        'Generates one sample of data'
+        return self.data[index], self.label[index]
 
 class TorchDatasetTailor(torch.utils.data.Dataset):
     def __init__(self, trajectories, obsv, success) -> None:
@@ -52,3 +59,15 @@ class TorchDatasetTailor(torch.utils.data.Dataset):
     def __getitem__(self, index):
         return (self.s_trajectories[index%self.s_len], self.s_obsv[index%self.s_len], self.success[index%self.s_len]),\
              (self.f_trajectories[index%self.f_len], self.f_obsv[index%self.f_len], self.fail[index%self.f_len])
+
+if __name__ == '__main__':
+    ptd = '/home/hendrik/Documents/master_project/LokalData/metaworld/pick-place/training_data/'
+    TD = TorchDatasetMW(path=ptd)
+    train_loader = DataLoader(TD, batch_size=16, shuffle=True)
+    print(len(train_loader))
+    for step, (d, l) in enumerate(train_loader):
+        print(d.shape)
+        print(l.shape)
+
+        break
+

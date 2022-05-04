@@ -54,14 +54,13 @@ class TaylorSignalModule(SignalModule):
 
     def loss_fct_tailor(self, inpt, label):
         #label = 1 means success
-        label = label.reshape(-1)
-        inpt = inpt['tailor_result'].reshape(-1)
-        loss_positive = ((inpt[label==0] - label[label==0])**2)
-        loss_negative = ((inpt[label==1] - label[label==1])**2)
-        loss = loss_positive.mean() + loss_negative.mean()
-        #loss = (inpt['tailor_result'].reshape(-1) - label)**2
-        #print(f'loss.shape {loss.shape}')
-        return loss.mean()
+        label = label.reshape(-1).type(torch.long)
+        label_one_hot = torch.nn.functional.one_hot(label, num_classes = 2)
+        inpt = inpt['tailor_result']
+        loss_negative = ((inpt[label==0] - label_one_hot[label==0])**2).mean()
+        loss_positive = ((inpt[label==1] - label_one_hot[label==1])**2).mean()
+        loss = ((inpt.reshape(-1)-label_one_hot.reshape(-1))**2).mean()
+        return loss, loss_positive, loss_negative
 
 
 def meta_optimizer(main_module, tailor_modules, inpt, d_out, epoch, debug_second, force_tailor_improvement, model_params):
@@ -150,11 +149,13 @@ def tailor_optimizer(tailor_modules, succ, failed):
         tailor_result = tailor_module.forward(tailor_inpt)
         tailor_loss_input = {}
         tailor_loss_input['tailor_result'] = tailor_result
-        tailor_loss = tailor_module.loss_fct_tailor(inpt = tailor_loss_input, label = label)
+        tailor_loss, loss_positive, loss_negative = tailor_module.loss_fct_tailor(inpt = tailor_loss_input, label = label)
         if not torch.isnan(tailor_loss):
             tailor_loss.backward()
             tailor_module.meta_optimizer.step()
-            debug_dict['tailor_module'] = tailor_loss.detach()
+            debug_dict['tailor loss'] = tailor_loss.detach()
+            debug_dict['tailor loss positive'] = loss_positive.detach()
+            debug_dict['tailor loss negative'] = loss_negative.detach()
     return debug_dict
 
 

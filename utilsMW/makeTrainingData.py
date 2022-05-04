@@ -158,6 +158,27 @@ class SuccessSimulation():
         success = torch.cat([*success], dim=0)
         return trajectories, inpt_obs, success
 
+class ToySimulation():
+    def __init__(self, neg_tol, pos_tol, check_outpt_fct, dataloader) -> None:
+        self.dataloader = dataloader        
+        self.neg_tol = neg_tol
+        self.pos_tol = pos_tol
+        self.check_outpt_fct = check_outpt_fct
+
+    def get_success(self, policy, env_tag, n):
+        trajectories = []
+        inpt_obs = []
+        success = []
+        for inpt, label in self.dataloader:
+            result = policy.forward(inpt)['gen_trj'].detach()
+            trajectories += [result]
+            inpt_obs.append(inpt[:,:1])
+            success.append(self.check_outpt_fct(label=label, outpt=result, tol_neg=self.neg_tol, tol_pos=self.pos_tol))
+            
+        trajectories = torch.cat([*trajectories], dim=0)
+        inpt_obs = torch.cat([*inpt_obs], dim=0)
+        success = torch.cat([*success], dim=0)
+        return trajectories[:n], inpt_obs[:n], success[:n]
 
 if __name__ == '__main__':
     DT = DefaultTraining()
