@@ -125,15 +125,10 @@ if __name__ == '__main__':
     else:    
         data_path = args[args.index('-path') + 1]
         path_dict = {
-        'TRAIN_DATA_TORCH' : os.path.join(data_path, 'TorchDataset/train_data_torch.txt'),
-        'VAL_DATA_TORCH' : os.path.join(data_path, 'TorchDataset/val_data_torch.txt'),
-        'TRAIN_DATA' : os.path.join(data_path, 'GDrive/train.tfrecord'),
-        'VAL_DATA' : os.path.join(data_path, 'GDrive/validate.tfrecord'),
-        'GLOVE_PATH' : os.path.join(data_path, 'GDrive/glove.6B.50d.txt'),
-        'META_WORLD' : os.path.join(data_path, '/home/hendrik/Documents/master_project/LokalData/metaworld/test/toy_data/'),
+        'META_WORLD' : os.path.join(data_path, 'metaworld/serverTest/'),
         'DATA_PATH' : data_path
         }
-
+        print(path_dict)
         device = 'cuda'
         if '-device' in args:
             device = args[args.index('-device') + 1]
