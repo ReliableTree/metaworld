@@ -12,6 +12,7 @@ import torch
 import numpy as np
 import os
 import numpy as np
+from torch.utils.data import DataLoader
 
 from metaworld.envs import (ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE,
                             ALL_V2_ENVIRONMENTS_GOAL_HIDDEN)
@@ -159,26 +160,37 @@ class SuccessSimulation():
         return trajectories, inpt_obs, success
 
 class ToySimulation():
-    def __init__(self, neg_tol, pos_tol, check_outpt_fct, dataloader) -> None:
-        self.dataloader = dataloader        
+    def __init__(self, neg_tol, pos_tol, check_outpt_fct, dataset) -> None:
+        self.dataset = dataset     
         self.neg_tol = neg_tol
         self.pos_tol = pos_tol
         self.check_outpt_fct = check_outpt_fct
 
-    def get_success(self, policy, env_tag, n):
+    def get_env(self, n):
+        indices = torch.randperm(len(self.dataset))[:n]
+        return indices
+
+    def get_success(self, policy, envs):
         trajectories = []
         inpt_obs = []
         success = []
-        for inpt, label in self.dataloader:
-            result = policy.forward(inpt)['gen_trj'].detach()
+        labels = []
+        subset = torch.utils.data.Subset(self.dataset, envs)
+        dataloader = DataLoader(subset, batch_size=32, shuffle=False)
+        for inpt, label in dataloader:
+            result = policy.forward(inpt)
+            result = result['gen trj'].detach()
             trajectories += [result]
             inpt_obs.append(inpt[:,:1])
             success.append(self.check_outpt_fct(label=label, outpt=result, tol_neg=self.neg_tol, tol_pos=self.pos_tol))
-            
+            labels.append(label)
+
         trajectories = torch.cat([*trajectories], dim=0)
         inpt_obs = torch.cat([*inpt_obs], dim=0)
         success = torch.cat([*success], dim=0)
-        return trajectories[:n], inpt_obs[:n], success[:n]
+        labels = torch.cat([*labels], dim=0)
+
+        return trajectories, inpt_obs, labels, success
 
 if __name__ == '__main__':
     DT = DefaultTraining()

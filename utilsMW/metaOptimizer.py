@@ -1,5 +1,6 @@
 from sys import prefix
 from time import perf_counter
+from turtle import forward
 
 from numpy import NaN
 import higher
@@ -41,27 +42,58 @@ class TaylorSignalModule(SignalModule):
         inpt_obs = inpt['inpt'][:,:1]
         inpt_obs = inpt_obs.repeat((1, trajectories.size(1), 1))
         inpt_super = torch.concat((trajectories, inpt_obs), dim = -1)
-        #print(f'max {inpt_super.max()}')
-        #print(f'min: {inpt_super.min()}')
-        #print(f'inpt_super obs shape: {inpt_super.shape}')
-
-        #print(f'invalue: {in_value}')
-        #inpt shape: batch, seq, dim
         result =  super().forward(inpt_super)
         return result
-    #def signal_fct_tailor(self, inpt):
-    #    return self.loss_fct(inpt['tailor_result'], 0)
 
     def loss_fct_tailor(self, inpt, label):
         #label = 1 means success
         label = label.reshape(-1).type(torch.long)
         label_one_hot = torch.nn.functional.one_hot(label, num_classes = 2)
+
         inpt = inpt['tailor_result']
         loss_negative = ((inpt[label==0] - label_one_hot[label==0])**2).mean()
         loss_positive = ((inpt[label==1] - label_one_hot[label==1])**2).mean()
         loss = ((inpt.reshape(-1)-label_one_hot.reshape(-1))**2).mean()
         return loss, loss_positive, loss_negative
 
+class MetaModule():
+    def __init__(self, main_signal, tailor_signal, lr, return_mode=0, writer=None):
+        self.main_signal = main_signal
+        self.tailor_signal = tailor_signal
+        self.lr = lr
+        self.return_mode = return_mode
+        self.writer = writer
+        self.optim_run = 0
+    
+    def forward(self, inpt, epochs = 1):
+        gen_result = self.main_signal.forward(inpt)['gen_trj']
+        if self.return_mode == 0:
+            return {'gen_trj': gen_result}
+        elif self.return_mode == 1:
+            opt_gen_result = torch.clone(gen_result.detach())
+            opt_gen_result.requires_grad_(True)
+            trj_opt =  torch.optim.SGD([opt_gen_result], lr=self.lr)
+            for i in range(epochs):
+                trj_opt.zero_grad()
+                tailor_inpt = {'result':opt_gen_result, 'inpt':inpt}
+                tailor_result = self.tailor_signal.forward(tailor_inpt)
+                expected_succes_before = tailor_result.max(dim=-1)[1].type(torch.float).mean()
+                goal_label = torch.ones_like(tailor_result[:,0])
+                tailor_loss_inpt = {'tailor_result': tailor_result}
+                tailor_loss = self.tailor_signal.loss_fct_tailor(inpt=tailor_loss_inpt, label=goal_label)[0]
+                tailor_loss.backward()
+                trj_opt.step()
+                tailor_after_inpt = {'result':opt_gen_result, 'inpt':inpt}
+                tailor_result_after = self.tailor_signal.forward(tailor_after_inpt)
+                expected_succes_after = tailor_result_after.max(dim=-1)[1].type(torch.float).mean()
+                #self.writer({str(self.optim_run) +' in optimisation ':expected_succes_after}, train=False, step=i)
+
+            return {
+                'gen_trj': opt_gen_result,
+                'inpt_trj' : gen_result,
+                'exp_succ_bef': expected_succes_before,
+                'exp_succ_after': expected_succes_after
+            }
 
 def meta_optimizer(main_module, tailor_modules, inpt, d_out, epoch, debug_second, force_tailor_improvement, model_params):
     #build environmtn

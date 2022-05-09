@@ -23,11 +23,13 @@ from torch.utils.data import DataLoader
 from gym import logger
 from utilsMW.makeTrainingData import ToySimulation
 from searchTest.toyEnvironment import make_func, check_outpt, make_tol
+from os import path, makedirs
 
 
 # Learning rate for the adam optimizer
 LEARNING_RATE   = 1e-4
 META_LEARNING_RATE = 1e-4
+LR_META_OPTIMIZED = 1
 # Weight for the attention loss
 WEIGHT_ATTN     = 1.0
 # Weight for the motion primitive weight loss
@@ -41,6 +43,7 @@ WEIGHT_GEN_TRJ  = 50
 WEIGHT_DT       = 14.0
 # Weight for the phase prediction loss
 WEIGHT_PHS      = 1 #1.0
+
 
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
@@ -58,10 +61,11 @@ def count_parameters(model):
     print(f"Total Trainable Params: {total_params}")
     return total_params
 
-def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, tboard, model_setup, train_size = 1):
+def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, tboard, model_setup, train_size, load_tol = False):
     train_path = path_dict['META_WORLD'] + 'train/'
     val_path = path_dict['META_WORLD'] + 'val/'
     test_path = path_dict['META_WORLD'] + 'test/'
+    tol_path = path_dict['META_WORLD'] + 'tol/'
     train_data = TorchDatasetMWToy(path=train_path, device=device)
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
     val_data = TorchDatasetMWToy(path=val_path, device=device)
@@ -81,19 +85,31 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
         result = model(inpt)
         break
 
-    tol_neg, tol_pos = make_tol(std_dev=5e-1, dim=dim_out, add=1e-2, device='cuda')
-    successSimulation = ToySimulation(neg_tol=tol_neg, pos_tol=tol_pos, check_outpt_fct=check_outpt, dataloader=test_loader)
+    if load_tol:
+        with open(tol_path + 'tol.pkl', 'rb') as f:
+            tol_neg, tol_pos = pickle.load(f)
+    else:
+        if not path.exists(tol_path):
+            makedirs(tol_path)
+        #tol_neg, tol_pos = make_tol(std_dev=5e-5, dim=dim_out, add=3e-1, device='cuda')
+        tol_neg = -0.15*torch.ones([dim_out], device='cuda')
+        tol_pos = 0.25*torch.ones([dim_out], device='cuda')
+        with open(tol_path + 'tol.pkl', 'wb') as f:
+            pickle.dump((tol_neg, tol_pos), f)  
+
+    successSimulation = ToySimulation(neg_tol=tol_neg, pos_tol=tol_pos, check_outpt_fct=check_outpt, dataset=test_data)
 
     model_setup['tailor_transformer']['seq_len'] = seq_len
     tailor_model = TailorTransformer(model_setup=model_setup['tailor_transformer'])
     
     
-    network = NetworkMeta(model, tailor_models=[tailor_model], env_tag=env_tag, successSimulation=successSimulation, data_path=path_dict['DATA_PATH'],logname=logname, lr=LEARNING_RATE, mlr=META_LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_gen_trj = WEIGHT_GEN_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, lw_fod=0, gamma_sl = 1, device=device, tboard=tboard)
+    network = NetworkMeta(model, tailor_models=[tailor_model], env_tag=env_tag, successSimulation=successSimulation, data_path=path_dict['DATA_PATH'],logname=logname, lr=LEARNING_RATE, mlr=META_LEARNING_RATE, mo_lr=LR_META_OPTIMIZED,  lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_gen_trj = WEIGHT_GEN_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, lw_fod=0, gamma_sl = 1, device=device, tboard=tboard)
     network.setDatasets(train_loader=train_loader, val_loader=eval_loader)
 
     network.setup_model(model_params=model_setup)
     if model_path is not None:
-        model.load_state_dict(torch.load(model_path, map_location='cuda:0'))
+        network.load_state_dict(torch.load(model_path, map_location='cuda:0'))
+        #model.load_state_dict(torch.load(model_path, map_location='cuda:0'))
     count_parameters(network)
     #print('in tailor transfo:')
     #count_parameters(tailor_model)
@@ -124,7 +140,7 @@ if __name__ == '__main__':
         from utilsMW.toy_model_setup import model_setup
         model_path = None
         if '-model' in args:
-            model_path = args[args.index('-model') + 1] + 'policy_translation_h'
+            model_path = args[args.index('-model') + 1] + 'policy_network'
             if '-model_setup' in args:
                 setup_path = args[args.index('-model') + 1] + 'model_setup.pkl'
                 with open(setup_path, 'rb') as f:
@@ -153,7 +169,6 @@ if __name__ == '__main__':
         hid             = hashids.Hashids()
         logname         = hid.encode(int(time.time() * 1000000))
         print(f'logname: {logname}')
-        network = setupModel(device=device, epochs = epochs, batch_size = batch_size, path_dict = path_dict, logname=logname, model_path=model_path, tboard=tboard, model_setup=model_setup, train_size=train_size)
-        print(f'end saving: {path_dict["MODEL_PATH"]}')
-        torch.save(network.state_dict(), path_dict['MODEL_PATH'])
+        network = setupModel(device=device, epochs = epochs, batch_size = batch_size, path_dict = path_dict, logname=logname, model_path=model_path, tboard=tboard, model_setup=model_setup, train_size=train_size, load_tol=False)
+
 

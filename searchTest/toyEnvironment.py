@@ -13,7 +13,7 @@ def make_toy_data(num_examples, inpt_func, outpt_func):
     return inpt, outpt
 
 def check_outpt(label, outpt, tol_neg, tol_pos):
-    diff = label-outpt
+    diff = outpt-label
     neg_acc = diff > tol_neg[None,None,:]
     pos_acc = diff < tol_pos[None,None,:]
     acc = neg_acc*pos_acc
