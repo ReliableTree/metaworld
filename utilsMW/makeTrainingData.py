@@ -160,11 +160,12 @@ class SuccessSimulation():
         return trajectories, inpt_obs, success
 
 class ToySimulation():
-    def __init__(self, neg_tol, pos_tol, check_outpt_fct, dataset) -> None:
+    def __init__(self, neg_tol, pos_tol, check_outpt_fct, dataset, window = 9) -> None:
         self.dataset = dataset     
         self.neg_tol = neg_tol
         self.pos_tol = pos_tol
         self.check_outpt_fct = check_outpt_fct
+        self.window = window
 
     def get_env(self, n):
         indices = torch.randperm(len(self.dataset))[:n]
@@ -179,10 +180,10 @@ class ToySimulation():
         dataloader = DataLoader(subset, batch_size=32, shuffle=False)
         for inpt, label in dataloader:
             result = policy.forward(inpt)
-            result = result['gen trj'].detach()
+            result = result['gen_trj'].detach()
             trajectories += [result]
             inpt_obs.append(inpt[:,:1])
-            success.append(self.check_outpt_fct(label=label, outpt=result, tol_neg=self.neg_tol, tol_pos=self.pos_tol))
+            success.append(self.check_outpt_fct(label=label, outpt=result, tol_neg=self.neg_tol, tol_pos=self.pos_tol, window=self.window))
             labels.append(label)
 
         trajectories = torch.cat([*trajectories], dim=0)
