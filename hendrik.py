@@ -1,14 +1,6 @@
-
 from __future__ import absolute_import, division, print_function, unicode_literals
-import importlib
 import sys
 
-from tests.metaworld.envs.mujoco.sawyer_xyz import utils
-sys.path.append('/home/hendrik/Documents/master_project/Code/LanguagePolicies/')
-from model_src.modelTorch import PolicyTranslationModelTorch
-from utils.Transformer import TailorTransformer
-from utils.networkMeta import NetworkMeta
-from utils.networkTorch import NetworkTorch
 import hashids
 import time
 import numpy as np
@@ -17,17 +9,25 @@ import torch.nn as nn
 from prettytable import PrettyTable
 import sys
 import pickle
-from utilsMW.model_setup import model_setup
-from utilsMW.dataLoaderMW import TorchDatasetMWToy
-from torch.utils.data import DataLoader
-from gym import logger
-from utilsMW.makeTrainingData import ToySimulation
-from searchTest.toyEnvironment import make_func, check_outpt, make_tol
-from os import path, makedirs
 
+from os import path, makedirs
+from pathlib import Path
+parent_path = str(Path(__file__).parent.absolute())
+parent_path += '/../'
+sys.path.append(parent_path)
+
+from MetaWorld.utilsMW.model_setup import model_setup
+from MetaWorld.utilsMW.dataLoaderMW import TorchDatasetMWToy
+from MetaWorld.utilsMW.makeTrainingData import ToySimulation
+from MetaWorld.searchTest.toyEnvironment import check_outpt
+from LanguagePolicies.model_src.modelTorch import PolicyTranslationModelTorch
+from LanguagePolicies.utils.Transformer import TailorTransformer
+from LanguagePolicies.utils.networkMeta import NetworkMeta
+
+from torch.utils.data import DataLoader
 
 # Learning rate for the adam optimizer
-LEARNING_RATE   = 5e-5
+LEARNING_RATE   = 1e-4
 META_LEARNING_RATE = 1e-4
 LR_META_OPTIMIZED = 1
 # Weight for the attention loss
@@ -97,13 +97,13 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
         with open(tol_path + 'tol.pkl', 'wb') as f:
             pickle.dump((tol_neg, tol_pos), f)  
 
-    successSimulation = ToySimulation(neg_tol=tol_neg, pos_tol=tol_pos, check_outpt_fct=check_outpt, dataset=test_data, window = 19)
+    successSimulation = ToySimulation(neg_tol=tol_neg, pos_tol=tol_pos, check_outpt_fct=check_outpt, dataset=test_data, window = 0)
 
     model_setup['tailor_transformer']['seq_len'] = seq_len
     tailor_model = TailorTransformer(model_setup=model_setup['tailor_transformer'])
     
     
-    network = NetworkMeta(model, tailor_models=[tailor_model], env_tag=env_tag, successSimulation=successSimulation, data_path=path_dict['DATA_PATH'],logname=logname, lr=LEARNING_RATE, mlr=META_LEARNING_RATE, mo_lr=LR_META_OPTIMIZED,  lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_gen_trj = WEIGHT_GEN_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, lw_fod=0, gamma_sl = 0.98, device=device, tboard=tboard)
+    network = NetworkMeta(model, tailor_models=[tailor_model], env_tag=env_tag, successSimulation=successSimulation, data_path=path_dict['DATA_PATH'],logname=logname, lr=LEARNING_RATE, mlr=META_LEARNING_RATE, mo_lr=LR_META_OPTIMIZED,  lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_gen_trj = WEIGHT_GEN_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, lw_fod=0, gamma_sl = 0.99, device=device, tboard=tboard)
     network.setDatasets(train_loader=train_loader, val_loader=eval_loader)
 
     network.setup_model(model_params=model_setup)
@@ -118,17 +118,18 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
     return network
 import os
 if __name__ == '__main__':
-    logger.set_level(40)
+
     args = sys.argv[1:]
     if '-path' not in args:
         print('no path given, not executing code')
     else:    
+
         data_path = args[args.index('-path') + 1]
         path_dict = {
-        'META_WORLD' : os.path.join(data_path, 'metaworld/serverTest/'),
+        'META_WORLD' : os.path.join(data_path, 'metaworld/small/'),
         'DATA_PATH' : data_path
         }
-        print(path_dict)
+
         device = 'cuda'
         if '-device' in args:
             device = args[args.index('-device') + 1]
@@ -165,5 +166,4 @@ if __name__ == '__main__':
         logname         = hid.encode(int(time.time() * 1000000))
         print(f'logname: {logname}')
         network = setupModel(device=device, epochs = epochs, batch_size = batch_size, path_dict = path_dict, logname=logname, model_path=model_path, tboard=tboard, model_setup=model_setup, train_size=train_size, load_tol=False)
-
 

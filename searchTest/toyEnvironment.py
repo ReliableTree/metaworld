@@ -11,12 +11,9 @@ def make_toy_data(num_examples, inpt_func, outpt_func):
 
 def check_outpt(label, outpt, tol_neg, tol_pos, window = 0):
     if window > 0:
-        tol_neg, tol_pos, inpt= make_sliding_tol(label=label, neg_tol=tol_neg, pos_tol=tol_pos, window=window)
-        outpt = torch.clone(outpt.detach())[:,int(window/2):-(int(window/2) + 1)]
-    else:
-        inpt = label
+        tol_neg, tol_pos, inpt= make_sliding_tol(label=inpt, neg_tol=tol_neg, pos_tol=tol_pos, window=window)
 
-    diff = inpt-outpt
+    diff = label-outpt
 
     if window > 0:
         neg_acc = diff > tol_neg
@@ -63,9 +60,12 @@ def plot_fcts(inpt, neg_tol, pos_tol, window = 0):
     else:
         sliding_tol_pos, sliding_tol_neg, inpt= make_sliding_tol(label=inpt.unsqueeze(0), neg_tol=neg_tol, pos_tol=pos_tol, window=window)
         pos_inpt, neg_inpt = sliding_tol_pos.numpy(), sliding_tol_neg.numpy()
+        inpt = inpt[0]
 
-    seq_len = len(inpt[0])
-    np_inpt = inpt[0].numpy()
+    np_inpt = inpt.numpy()
+    print(f'input: {np_inpt.shape}')
+    
+    seq_len = len(inpt)
     num_graphs = int(np.ceil(np.sqrt(inpt_dim)))
     fig, ax = plt.subplots(num_graphs,num_graphs)
     fig.set_size_inches(9, 9)
@@ -104,7 +104,7 @@ def make_toy_data(fct, n, dim_in, std = 0.1, data_path= None):
     data_sets = ['train', 'val', 'test']
     if data_path is not None:
         for i, set in enumerate(data_sets):
-            path = data_path + set + '/'
+            path =  data_path + set + '/'
             start = i * int(len(inpt)/len(data_sets))
             end = (i+1) * int(len(inpt)/len(data_sets))
             print(start)
@@ -112,7 +112,7 @@ def make_toy_data(fct, n, dim_in, std = 0.1, data_path= None):
             save(path=path, dict={'inpt':5*inpt[start:end], 'label':label[start:end]})
     return inpt, label
 
-def make_sliding_tol_dim(label, window = 9):
+def make_sliding_tol_dim(label, window = 9, pos = True):
     batch_size = label.size(0)
     batch_counter = torch.arange(batch_size)
     counter = torch.arange(label.size(-1) - window) + int(window/2)
