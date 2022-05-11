@@ -65,7 +65,7 @@ class MetaModule():
         self.writer = writer
         self.optim_run = 0
     
-    def forward(self, inpt, epochs = 1):
+    def forward(self, inpt, epochs = 100):
         gen_result = self.main_signal.forward(inpt)['gen_trj']
         if self.return_mode == 0:
             return {'gen_trj': gen_result}
@@ -73,6 +73,8 @@ class MetaModule():
             opt_gen_result = torch.clone(gen_result.detach())
             opt_gen_result.requires_grad_(True)
             trj_opt =  torch.optim.SGD([opt_gen_result], lr=self.lr)
+            best_expected_success = 0
+            best_trj = torch.clone(opt_gen_result)
             for i in range(epochs):
                 trj_opt.zero_grad()
                 tailor_inpt = {'result':opt_gen_result, 'inpt':inpt}
@@ -86,10 +88,13 @@ class MetaModule():
                 tailor_after_inpt = {'result':opt_gen_result, 'inpt':inpt}
                 tailor_result_after = self.tailor_signal.forward(tailor_after_inpt)
                 expected_succes_after = tailor_result_after.max(dim=-1)[1].type(torch.float).mean()
+                if expected_succes_after > best_expected_success:
+                    best_expected_success = expected_succes_after
+                    best_trj = torch.clone(opt_gen_result)
                 #self.writer({str(self.optim_run) +' in optimisation ':expected_succes_after}, train=False, step=i)
 
             return {
-                'gen_trj': opt_gen_result,
+                'gen_trj': best_trj,
                 'inpt_trj' : gen_result,
                 'exp_succ_bef': expected_succes_before,
                 'exp_succ_after': expected_succes_after
