@@ -39,13 +39,15 @@ class TorchDatasetMWToy(torch.utils.data.Dataset):
         return self.data[index], self.label[index]
 
 class TorchDatasetTailor(torch.utils.data.Dataset):
-    def __init__(self, trajectories, obsv, success) -> None:
+    def __init__(self, trajectories, obsv, success, ftrj) -> None:
         super().__init__()
         self.s_trajectories = trajectories[success==1]
+        self.s_ftrj = ftrj[success==1]
         self.s_obsv = obsv[success==1]
         self.success = success[success==1]
 
         self.f_trajectories = trajectories[success==0]
+        self.f_ftrj = ftrj[success==0]
         self.f_obsv = obsv[success==0]
         self.fail = success[success==0]
 
@@ -57,8 +59,8 @@ class TorchDatasetTailor(torch.utils.data.Dataset):
         return self.len
 
     def __getitem__(self, index):
-        return (self.s_trajectories[index%self.s_len], self.s_obsv[index%self.s_len], self.success[index%self.s_len]),\
-             (self.f_trajectories[index%self.f_len], self.f_obsv[index%self.f_len], self.fail[index%self.f_len])
+        return (self.s_trajectories[index%self.s_len], self.s_obsv[index%self.s_len], self.success[index%self.s_len], self.s_ftrj[index%self.s_len]),\
+             (self.f_trajectories[index%self.f_len], self.f_obsv[index%self.f_len], self.fail[index%self.f_len], self.f_ftrj[index%self.f_len])
 
 if __name__ == '__main__':
     ptd = '/home/hendrik/Documents/master_project/LokalData/metaworld/pick-place/training_data/'

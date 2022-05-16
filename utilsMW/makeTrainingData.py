@@ -173,25 +173,29 @@ class ToySimulation():
 
     def get_success(self, policy, envs):
         trajectories = []
+        f_results = []
         inpt_obs = []
         success = []
         labels = []
         subset = torch.utils.data.Subset(self.dataset, envs)
-        dataloader = DataLoader(subset, batch_size=32, shuffle=False)
+        dataloader = DataLoader(subset, batch_size=200, shuffle=False)
         for inpt, label in dataloader:
-            result = policy.forward(inpt)
-            result = result['gen_trj'].detach()
+            result_pol = policy.forward(inpt)
+            result = result_pol['gen_trj'].detach()
+            f_result = result_pol['inpt_trj'].detach()
             trajectories += [result]
+            f_results += [f_result]
             inpt_obs.append(inpt[:,:1])
             success.append(self.check_outpt_fct(label=label, outpt=result, tol_neg=self.neg_tol, tol_pos=self.pos_tol, window=self.window))
             labels.append(label)
 
         trajectories = torch.cat([*trajectories], dim=0)
+        f_results = torch.cat([*f_results], dim=0)
         inpt_obs = torch.cat([*inpt_obs], dim=0)
         success = torch.cat([*success], dim=0)
         labels = torch.cat([*labels], dim=0)
 
-        return trajectories, inpt_obs, labels, success
+        return trajectories, inpt_obs, labels, success, f_results
 
 if __name__ == '__main__':
     DT = DefaultTraining()

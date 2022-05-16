@@ -27,7 +27,7 @@ from LanguagePolicies.utils.networkMeta import NetworkMeta
 from torch.utils.data import DataLoader
 
 # Learning rate for the adam optimizer
-LEARNING_RATE   = 0#1e-4
+LEARNING_RATE   = 1e-4
 META_LEARNING_RATE = 1e-4
 LR_META_OPTIMIZED = 1e-2
 # Weight for the attention loss
@@ -92,8 +92,10 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
         if not path.exists(tol_path):
             makedirs(tol_path)
         #tol_neg, tol_pos = make_tol(std_dev=5e-5, dim=dim_out, add=3e-1, device='cuda')
-        tol_neg = -0.60*torch.ones([dim_out], device='cuda')
-        tol_pos = 0.35*torch.ones([dim_out], device='cuda')
+        #-0.55, 0.70
+        #-0.55, 0.3
+        tol_neg = -0.35*torch.ones([dim_out], device='cuda')
+        tol_pos = 0.1*torch.ones([dim_out], device='cuda')
         with open(tol_path + 'tol.pkl', 'wb') as f:
             pickle.dump((tol_neg, tol_pos), f)  
 
@@ -108,8 +110,9 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
 
     network.setup_model(model_params=model_setup)
     if model_path is not None:
-        network.load_state_dict(torch.load(model_path, map_location='cuda:0'))
+        network.load_state_dict(torch.load(model_path + 'policy_network', map_location='cuda:0'), strict=False)
         #model.load_state_dict(torch.load(model_path, map_location='cuda:0'))
+        #network.loadTailorDataset(model_path)
     count_parameters(network)
     #print('in tailor transfo:')
     #count_parameters(tailor_model)
@@ -136,7 +139,8 @@ if __name__ == '__main__':
         from utilsMW.toy_model_setup import model_setup
         model_path = None
         if '-model' in args:
-            model_path = args[args.index('-model') + 1] + 'policy_network'
+
+            model_path = args[args.index('-model') + 1]
             if '-model_setup' in args:
                 setup_path = args[args.index('-model') + 1] + 'model_setup.pkl'
                 with open(setup_path, 'rb') as f:
