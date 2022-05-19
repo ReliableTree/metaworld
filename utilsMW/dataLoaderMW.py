@@ -5,14 +5,14 @@ from torch.utils.data import DataLoader
 class TorchDatasetMW(torch.utils.data.Dataset):
   'Characterizes a dataset for PyTorch'
   def __init__(self, path, device = 'cpu'):
-      path_data = path + 'training_data'
-      path_label = path + 'training_label'
-      path_phase = path + 'training_reward'
-      self.data = torch.load(path_data).to(torch.float32).to(device)
-      self.label = torch.load(path_label).to(torch.float32).to(device)
-      self.phase = torch.load(path_phase).to(torch.float32).to(device)
+    path_data = path + 'training_data'
+    path_label = path + 'training_label'
+    path_phase = path + 'training_reward'
+    self.data = torch.load(path_data).to(torch.float32).to(device)
+    self.label = torch.load(path_label).to(torch.float32).to(device)
+    self.phase = torch.load(path_phase).to(torch.float32).to(device)
 
-      self.data = torch.cat((self.data, self.phase), dim=-1)
+    #self.data = torch.cat((self.data, self.phase.unsqueeze(-1)), dim=-1)
 
   def __len__(self):
         'Denotes the total number of samples'

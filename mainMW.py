@@ -1,19 +1,17 @@
 
 from __future__ import absolute_import, division, print_function, unicode_literals
-import importlib
 import sys
-
+from pathlib import Path
 from tests.metaworld.envs.mujoco.sawyer_xyz import utils
-sys.path.append('/home/hendrik/Documents/master_project/Code/LanguagePolicies/')
-from model_src.modelTorch import PolicyTranslationModelTorch
-from utils.Transformer import TailorTransformer
-from utils.networkMeta import NetworkMeta
-from utils.networkTorch import NetworkTorch
+parent_path = str(Path(__file__).parent.absolute())
+parent_path += '/../'
+sys.path.append(parent_path)
+from LanguagePolicies.model_src.modelTorch import PolicyTranslationModelTorch
+from LanguagePolicies.utils.Transformer import TailorTransformer
+from LanguagePolicies.utils.networkMeta import NetworkMeta
 import hashids
 import time
-import numpy as np
 import torch
-import torch.nn as nn
 from prettytable import PrettyTable
 import sys
 import pickle
@@ -26,7 +24,8 @@ from utilsMW.makeTrainingData import SuccessSimulation
 
 
 # Learning rate for the adam optimizer
-LEARNING_RATE   = 0.00005
+#LEARNING_RATE   = 0.00005
+LEARNING_RATE   = 5e-5
 # Weight for the attention loss
 WEIGHT_ATTN     = 1.0
 # Weight for the motion primitive weight loss
@@ -43,6 +42,9 @@ WEIGHT_PHS      = 1 #1.0
 
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
+
+META_LEARNING_RATE = 1e-4
+LR_META_OPTIMIZED = 1e-2
 
 
 def count_parameters(model):
@@ -64,22 +66,23 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
 
     tailor_models = [tailor_model]
     #tailor_models=[]
-    train_data = TorchDatasetMW(path=path_dict['META_WORLD'], device=device)
+    data = TorchDatasetMW(path=path_dict['META_WORLD'], device=device)
 
+    train_indices = torch.arange(10)+20
+    train_data = torch.utils.data.Subset(data, train_indices)
     print(f'len(train_data): {len(train_data)}')
-
-    #train_data = torch.utils.data.Subset(train_data, train_indices).to(device)
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
 
-    #eval_data = TorchDataset(path = path_dict['VAL_DATA_TORCH'], device=device).to(device)
-    eval_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+    eval_indices = torch.arange(10) + 30
+    eval_data = torch.utils.data.Subset(data, eval_indices)
+    eval_loader = DataLoader(eval_data, batch_size=batch_size, shuffle=True)
     env_tag = 'pickplace'
-    network = NetworkMeta(model, tailor_models=tailor_models, env_tag=env_tag, successSimulation=SuccessSimulation(), data_path=path_dict['DATA_PATH'],logname=logname, lr=LEARNING_RATE, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_gen_trj = WEIGHT_GEN_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, lw_fod=0, gamma_sl = 1, device=device, tboard=tboard)
+    network = NetworkMeta(model, tailor_models=tailor_models, env_tag=env_tag, successSimulation=SuccessSimulation(), data_path=path_dict['DATA_PATH'],logname=logname, lr=LEARNING_RATE, mlr=META_LEARNING_RATE, mo_lr=LR_META_OPTIMIZED, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_gen_trj = WEIGHT_GEN_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, lw_fod=0, gamma_sl = 0.95, device=device, tboard=tboard)
     network.setDatasets(train_loader=train_loader, val_loader=eval_loader)
 
     network.setup_model(model_params=model_setup)
     if model_path is not None:
-        model.load_state_dict(torch.load(model_path, map_location='cuda:0'))
+        network.load_state_dict(torch.load(model_path + 'policy_network', map_location='cuda:0'), strict=False)
     count_parameters(network)
     print('in tailor transfo:')
     count_parameters(tailor_model)
@@ -113,7 +116,7 @@ if __name__ == '__main__':
         from utilsMW.model_setup import model_setup
         model_path = None
         if '-model' in args:
-            model_path = args[args.index('-model') + 1] + 'policy_translation_h'
+            model_path = args[args.index('-model') + 1]
             if '-model_setup' in args:
                 setup_path = args[args.index('-model') + 1] + 'model_setup.pkl'
                 with open(setup_path, 'rb') as f:

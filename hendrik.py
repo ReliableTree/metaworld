@@ -29,7 +29,7 @@ from torch.utils.data import DataLoader
 # Learning rate for the adam optimizer
 LEARNING_RATE   = 1e-4
 META_LEARNING_RATE = 1e-4
-LR_META_OPTIMIZED = 1e-2
+LR_META_OPTIMIZED = 5e-3
 # Weight for the attention loss
 WEIGHT_ATTN     = 1.0
 # Weight for the motion primitive weight loss
@@ -94,8 +94,9 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
         #tol_neg, tol_pos = make_tol(std_dev=5e-5, dim=dim_out, add=3e-1, device='cuda')
         #-0.55, 0.70
         #-0.55, 0.3
-        tol_neg = -0.35*torch.ones([dim_out], device='cuda')
-        tol_pos = 0.1*torch.ones([dim_out], device='cuda')
+        #-0.35, 0.1
+        tol_neg = -0.02*torch.ones([dim_out], device='cuda')
+        tol_pos = 0.15*torch.ones([dim_out], device='cuda')
         with open(tol_path + 'tol.pkl', 'wb') as f:
             pickle.dump((tol_neg, tol_pos), f)  
 

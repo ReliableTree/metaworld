@@ -7,6 +7,8 @@ import torch
 import torch.nn as nn
 import copy
 
+from zmq import device
+
 def loss_fct_proto(inpt, label):
     return ((inpt - label)**2)
 
@@ -35,7 +37,7 @@ class TaylorSignalModule(SignalModule):
     def __init__(self, model, loss_fct, lr, mlr):
         super().__init__(model=model, loss_fct=loss_fct)
         #self.meta_optimizer = torch.optim.Adam(params=self.model.parameters(), lr=lr)
-        self.meta_optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=lr, weight_decay=1e-2)
+        self.meta_optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=lr, weight_decay=1e-1)
         self.mlr = mlr
         self.lr = lr
 
@@ -43,15 +45,17 @@ class TaylorSignalModule(SignalModule):
         self.model.super_init = False
         self.model.forward(inpt)
         #self.meta_optimizer = torch.optim.Adam(params=self.model.parameters(), lr=self.lr)
-        self.meta_optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.lr, weight_decay=1e-2)
+        self.meta_optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.lr, weight_decay=1e-1)
 
     def forward(self, inpt):
         trajectories = inpt['result']
         original_trajectories = inpt['original']
         inpt_obs = inpt['inpt'][:,:1]
         inpt_obs = inpt_obs.repeat((1, trajectories.size(1), 1))
-        inpt_super = torch.concat((trajectories, original_trajectories, inpt_obs), dim = -1)
+        #inpt_super = torch.concat((trajectories, original_trajectories, inpt_obs), dim = -1)
+        inpt_super = torch.concat((trajectories, inpt_obs), dim = -1)
         result =  super().forward(inpt_super)
+
         self.lr = self.meta_optimizer.param_groups[0]['lr']
         return result
 
@@ -67,15 +71,16 @@ class TaylorSignalModule(SignalModule):
         return loss, loss_positive, loss_negative
 
 class MetaModule():
-    def __init__(self, main_signal, tailor_signal, lr, return_mode=0, writer=None):
+    def __init__(self, main_signal, tailor_signal, lr, return_mode=0, writer=None, device='cuda'):
         self.main_signal = main_signal
         self.tailor_signal = tailor_signal
         self.lr = lr
         self.return_mode = return_mode
         self.writer = writer
         self.optim_run = 0
-        self.max_steps =2
+        self.max_steps =5
         self.last_update = 0
+        self.device = device
     
     def forward(self, inpt, epochs = 100):
         main_signal_state_dict= copy.deepcopy(self.main_signal.model.state_dict())
@@ -86,10 +91,12 @@ class MetaModule():
             #opt_inpt = torch.clone(inpt.detach())
             opt_gen_result = torch.clone(gen_result.detach())
             opt_gen_result.requires_grad_(True)
-            optimizer =  torch.optim.Adam([opt_gen_result], lr=self.lr)
+            #optimizer =  torch.optim.Adam(self.main_signal.model.parameters(), lr=self.lr)
             #optimizer = torch.optim.SGD(self.main_signal.model.parameters(), lr=self.lr)
-            #inpt_opt = torch.optim.SGD([opt_inpt], lr=self.lr)
-            #inpt_opt = torch.optim.Adam([opt_inpt], lr=self.lr)
+            #optimizer = torch.optim.SGD([opt_gen_result], lr=self.lr)
+            optimizer = torch.optim.Adam([opt_gen_result], lr=self.lr)
+            #optimizer = torch.optim.AdamW(self.main_signal.model.parameters(), lr=self.lr)
+
             best_expected_success = None
             best_expected_mean = 0
             best_trj = torch.clone(gen_result)
@@ -97,9 +104,9 @@ class MetaModule():
             step = 0
             self.tailor_signal.model.eval()
             gen_result = gen_result.detach()
-            if (self.optim_run+1) % 10 ==0 and self.optim_run != self.last_update:
+            '''if (self.optim_run+1) % 10 ==0 and self.optim_run != self.last_update:
                 self.last_update = self.optim_run
-                self.max_steps *= 1.3
+                self.max_steps *= 1.05'''
             while best_expected_mean < 0.98 and (step <= self.max_steps):
                 optimizer.zero_grad()
                 tailor_inpt = {'result':opt_gen_result, 'inpt':inpt, 'original':gen_result}
@@ -112,14 +119,14 @@ class MetaModule():
                 #tailor_loss = tailor_loss + change_trj_loss
                 tailor_loss.backward()
                 optimizer.step()
-                #gen_result = self.main_signal.forward(inpt)['gen_trj']
+                #opt_gen_result = self.main_signal.forward(inpt)['gen_trj']
                 tailor_after_inpt = {'result':opt_gen_result, 'inpt':inpt, 'original':gen_result}
-                tailor_result_after = self.tailor_signal.forward(tailor_after_inpt)
                 tailor_result_after = self.tailor_signal.forward(tailor_after_inpt)
                 #expected_succes_after = tailor_result_after[:,1].mean()
                 #expected_succes_after = tailor_result_after.max(dim=-1)[1].type(torch.float).mean()
                 if best_expected_success is None:
                     best_expected_success = torch.clone(tailor_result_after[:,1])
+                    best_trj = opt_gen_result.detach()
                 else:
                     improve_mask = tailor_result_after[:,1] > best_expected_success
                     best_expected_success[improve_mask]= tailor_result_after[:,1][improve_mask].detach()
@@ -208,8 +215,14 @@ def meta_optimizer(main_module, tailor_modules, inpt, d_out, epoch, debug_second
 
 def tailor_optimizer(tailor_modules, succ, failed):
     debug_dict = {}
+    if len(succ[0].shape) < 3:
+        for ob in succ:
+            ob = ob.unsqueeze(0)
+        for ob in failed:
+            ob = ob.unsqueeze(0)
     s_trj, s_obs, success, s_ftrj = succ
     f_trj, f_obs, fail, f_ftrj = failed
+
     trajectories = torch.cat((s_trj, f_trj), dim=0)
     ftrj = torch.cat((s_ftrj, f_ftrj), dim=0)
     inpt = torch.cat((s_obs, f_obs), dim=0)
