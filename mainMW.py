@@ -66,18 +66,18 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
 
     tailor_models = [tailor_model]
     #tailor_models=[]
-    data = TorchDatasetMW(path=path_dict['META_WORLD'], device=device)
+    data = TorchDatasetMW(path=path_dict['META_WORLD'], device=device, n=10)
 
-    train_indices = torch.arange(10)+20
-    train_data = torch.utils.data.Subset(data, train_indices)
-    print(f'len(train_data): {len(train_data)}')
-    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+    #train_indices = torch.arange(10)+20
+    #train_data = torch.utils.data.Subset(data, train_indices)
+    print(f'len(train_data): {len(data)}')
+    train_loader = DataLoader(data, batch_size=batch_size, shuffle=True)
 
-    eval_indices = torch.arange(10) + 30
-    eval_data = torch.utils.data.Subset(data, eval_indices)
-    eval_loader = DataLoader(eval_data, batch_size=batch_size, shuffle=True)
+    #eval_indices = torch.arange(10) + 30
+    #eval_data = torch.utils.data.Subset(data, eval_indices)
+    eval_loader = DataLoader(data, batch_size=batch_size, shuffle=True)
     env_tag = 'pickplace'
-    network = NetworkMeta(model, tailor_models=tailor_models, env_tag=env_tag, successSimulation=SuccessSimulation(), data_path=path_dict['DATA_PATH'],logname=logname, lr=LEARNING_RATE, mlr=META_LEARNING_RATE, mo_lr=LR_META_OPTIMIZED, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_gen_trj = WEIGHT_GEN_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, lw_fod=0, gamma_sl = 0.95, device=device, tboard=tboard)
+    network = NetworkMeta(model, tailor_models=tailor_models, env_tag=env_tag, successSimulation=SuccessSimulation(), data_path=path_dict['DATA_PATH'],logname=logname, lr=LEARNING_RATE, mlr=META_LEARNING_RATE, mo_lr=LR_META_OPTIMIZED, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_gen_trj = WEIGHT_GEN_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, lw_fod=0, gamma_sl = 1, device=device, tboard=tboard)
     network.setDatasets(train_loader=train_loader, val_loader=eval_loader)
 
     network.setup_model(model_params=model_setup)

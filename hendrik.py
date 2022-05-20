@@ -103,10 +103,14 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
     successSimulation = ToySimulation(neg_tol=tol_neg, pos_tol=tol_pos, check_outpt_fct=check_outpt, dataset=test_data, window = 0)
 
     model_setup['tailor_transformer']['seq_len'] = seq_len
-    tailor_model = TailorTransformer(model_setup=model_setup['tailor_transformer'])
+
+    tailor_models = []
+    for i in range(3):
+        tailor_models.append(TailorTransformer(model_setup=model_setup['tailor_transformer']))
+    #tailor_model = TailorTransformer(model_setup=model_setup['tailor_transformer'])
     
     
-    network = NetworkMeta(model, tailor_models=[tailor_model], env_tag=env_tag, successSimulation=successSimulation, data_path=path_dict['DATA_PATH'],logname=logname, lr=LEARNING_RATE, mlr=META_LEARNING_RATE, mo_lr=LR_META_OPTIMIZED,  lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_gen_trj = WEIGHT_GEN_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, lw_fod=0, gamma_sl = 0.99, device=device, tboard=tboard)
+    network = NetworkMeta(model, tailor_models=tailor_models, env_tag=env_tag, successSimulation=successSimulation, data_path=path_dict['DATA_PATH'],logname=logname, lr=LEARNING_RATE, mlr=META_LEARNING_RATE, mo_lr=LR_META_OPTIMIZED,  lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_gen_trj = WEIGHT_GEN_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, lw_fod=0, gamma_sl = 0.99, device=device, tboard=tboard)
     network.setDatasets(train_loader=train_loader, val_loader=eval_loader)
 
     network.setup_model(model_params=model_setup)

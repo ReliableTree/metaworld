@@ -3,24 +3,36 @@ import torch
 from torch.utils.data import DataLoader
 
 class TorchDatasetMW(torch.utils.data.Dataset):
-  'Characterizes a dataset for PyTorch'
-  def __init__(self, path, device = 'cpu'):
-    path_data = path + 'training_data'
-    path_label = path + 'training_label'
-    path_phase = path + 'training_reward'
-    self.data = torch.load(path_data).to(torch.float32).to(device)
-    self.label = torch.load(path_label).to(torch.float32).to(device)
-    self.phase = torch.load(path_phase).to(torch.float32).to(device)
+    'Characterizes a dataset for PyTorch'
+    def __init__(self, path, device = 'cpu', n=1):
+        path_data = path + 'training_data'
+        path_label = path + 'training_label'
+        path_phase = path + 'training_reward'
+        self.data = torch.load(path_data).to(torch.float32).to(device)[:n]
+        self.label = torch.load(path_label).to(torch.float32).to(device)[:n]
+        self.phase = torch.load(path_phase).to(torch.float32).to(device)[:n]
 
-    #self.data = torch.cat((self.data, self.phase.unsqueeze(-1)), dim=-1)
+        #self.data = torch.cat((self.data, self.phase.unsqueeze(-1)), dim=-1)
 
-  def __len__(self):
-        'Denotes the total number of samples'
-        return len(self.data)
+    def __len__(self):
+            'Denotes the total number of samples'
+            return len(self.data)
 
-  def __getitem__(self, index):
-        'Generates one sample of data'
-        return self.data[index], self.label[index]
+    def add_data(self, data, label):
+        print(f'data: {data.shape}')
+        print(f'label: {label.shape}')
+        print(f'self.data: {self.data.shape}')
+        print(f'self.label: {self.label.shape}')
+
+        if data.size(1) == 1:
+            data = data.repeat([1,self.data.size(1), 1])
+
+        self.data = torch.cat((self.data, data), dim=0)
+        self.label = torch.cat((self.label, label), dim=0)
+
+    def __getitem__(self, index):
+            'Generates one sample of data'
+            return self.data[index], self.label[index]
 
 class TorchDatasetMWToy(torch.utils.data.Dataset):
   def __init__(self, path, device = 'cpu'):
