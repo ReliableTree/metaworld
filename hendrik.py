@@ -21,14 +21,14 @@ from MetaWorld.utilsMW.dataLoaderMW import TorchDatasetMWToy
 from MetaWorld.utilsMW.makeTrainingData import ToySimulation
 from MetaWorld.searchTest.toyEnvironment import check_outpt
 from LanguagePolicies.model_src.modelTorch import PolicyTranslationModelTorch
-from LanguagePolicies.utils.Transformer import TailorTransformer
+from LanguagePolicies.utils.Transformer import TailorTransformer, TransformerModel, TransformerDecoder
 from LanguagePolicies.utils.networkMeta import NetworkMeta
 
 from torch.utils.data import DataLoader
 
 # Learning rate for the adam optimizer
 LEARNING_RATE   = 1e-4
-META_LEARNING_RATE = 1e-4
+META_LEARNING_RATE = 6e-5
 LR_META_OPTIMIZED = 5e-3
 # Weight for the attention loss
 WEIGHT_ATTN     = 1.0
@@ -78,9 +78,14 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
         dim_out = outpt.size(-1)
         seq_len = outpt.size(1)
         break
-    model_setup['plan_nn']['plan']['d_output'] = dim_out
+
+    model_setup['plan_decoder'] = {}
+    model_setup['plan_decoder']['d_output'] = dim_out
+    model_setup['plan_decoder']['output_seq'] = True
+
     model_setup['plan_nn']['plan']['seq_len'] = seq_len
     model   = PolicyTranslationModelTorch(od_path="", model_setup=model_setup, device=device).to(device)
+    plan_decoder = TransformerDecoder(model_setup['plan_decoder'])
     for inpt, outpt in train_loader:
         result = model(inpt)
         break
@@ -102,15 +107,16 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
 
     successSimulation = ToySimulation(neg_tol=tol_neg, pos_tol=tol_pos, check_outpt_fct=check_outpt, dataset=test_data, window = 0)
 
-    model_setup['tailor_transformer']['seq_len'] = seq_len
+    #model_setup['tailor_transformer']['seq_len'] = seq_len
 
     tailor_models = []
-    for i in range(3):
-        tailor_models.append(TailorTransformer(model_setup=model_setup['tailor_transformer']))
+    for i in range(1):
+        #tailor_models.append(TailorTransformer(model_setup=model_setup['tailor_transformer']))
+        tailor_models.append(TransformerDecoder(model_setup=model_setup['tailor_decoder']))
     #tailor_model = TailorTransformer(model_setup=model_setup['tailor_transformer'])
     
     
-    network = NetworkMeta(model, tailor_models=tailor_models, env_tag=env_tag, successSimulation=successSimulation, data_path=path_dict['DATA_PATH'],logname=logname, lr=LEARNING_RATE, mlr=META_LEARNING_RATE, mo_lr=LR_META_OPTIMIZED,  lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_gen_trj = WEIGHT_GEN_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, lw_fod=0, gamma_sl = 0.99, device=device, tboard=tboard)
+    network = NetworkMeta(model, plan_decoder, tailor_models=tailor_models, env_tag=env_tag, successSimulation=successSimulation, data_path=path_dict['DATA_PATH'],logname=logname, lr=LEARNING_RATE, mlr=META_LEARNING_RATE, mo_lr=LR_META_OPTIMIZED,  lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_gen_trj = WEIGHT_GEN_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, lw_fod=0, gamma_sl = 0.99, device=device, tboard=tboard)
     network.setDatasets(train_loader=train_loader, val_loader=eval_loader)
 
     network.setup_model(model_params=model_setup)

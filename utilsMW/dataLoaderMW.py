@@ -8,9 +8,9 @@ class TorchDatasetMW(torch.utils.data.Dataset):
         path_data = path + 'training_data'
         path_label = path + 'training_label'
         path_phase = path + 'training_reward'
-        self.data = torch.load(path_data).to(torch.float32).to(device)[:n]
-        self.label = torch.load(path_label).to(torch.float32).to(device)[:n]
-        self.phase = torch.load(path_phase).to(torch.float32).to(device)[:n]
+        self.data = torch.load(path_data).to(torch.float32).to(device)[-n:]
+        self.label = torch.load(path_label).to(torch.float32).to(device)[-n:]
+        self.phase = torch.load(path_phase).to(torch.float32).to(device)[-n:]
 
         #self.data = torch.cat((self.data, self.phase.unsqueeze(-1)), dim=-1)
 
@@ -35,20 +35,31 @@ class TorchDatasetMW(torch.utils.data.Dataset):
             return self.data[index], self.label[index]
 
 class TorchDatasetMWToy(torch.utils.data.Dataset):
-  def __init__(self, path, device = 'cpu'):
-      path_data = path + 'inpt'
-      path_label = path + 'label'
-      self.data = torch.load(path_data).to(torch.float32).to(device)
-      self.label = torch.load(path_label).to(torch.float32).to(device)
+    def __init__(self, path, device = 'cpu'):
+        path_data = path + 'inpt'
+        path_label = path + 'label'
+        self.data = torch.load(path_data).to(torch.float32).to(device)
+        self.label = torch.load(path_label).to(torch.float32).to(device)
       
+    def add_data(self, data, label):
+        print(f'data: {data.shape}')
+        print(f'label: {label.shape}')
+        print(f'self.data: {self.data.shape}')
+        print(f'self.label: {self.label.shape}')
 
-  def __len__(self):
-        'Denotes the total number of samples'
-        return len(self.data)
+        if data.size(1) == 1:
+            data = data.repeat([1,self.data.size(1), 1])
 
-  def __getitem__(self, index):
-        'Generates one sample of data'
-        return self.data[index], self.label[index]
+        self.data = torch.cat((self.data, data), dim=0)
+        self.label = torch.cat((self.label, label), dim=0)
+
+    def __len__(self):
+            'Denotes the total number of samples'
+            return len(self.data)
+
+    def __getitem__(self, index):
+            'Generates one sample of data'
+            return self.data[index], self.label[index]
 
 class TorchDatasetTailor(torch.utils.data.Dataset):
     def __init__(self, trajectories, obsv, success, ftrj) -> None:

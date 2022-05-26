@@ -22,18 +22,14 @@ model_setup = {
             'd_hid':50,
             'd_model' : 50,
             'nlayers':4,
-            'dilation' : 2
+            'dilation' : 2,
+            'output_seq':True
         },
     },
-    'tailor_transformer': {
-                'use_layernorm':False,
-                'd_output':50,
-                'd_model' : 80,
-                'nhead':10,
-                'd_hid':80,
-                'nlayers':4,
-                'd_result':2,
+    'tailor_decoder':{
+        'd_output' : 1,
+        'output_seq':False
     },
     'quick_val':False,
-    'val_every' : 4
+    'val_every' : 1
 }
