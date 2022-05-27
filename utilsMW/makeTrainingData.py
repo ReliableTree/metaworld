@@ -14,6 +14,13 @@ import os
 import numpy as np
 from torch.utils.data import DataLoader
 
+from pathlib import Path
+import sys
+parent_path = str(Path(__file__).parent.absolute())
+parent_path += '/../'
+sys.path.append(parent_path)
+from MetaWorld.utilsMW.utils import cat_obs_trj
+
 from metaworld.envs import (ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE,
                             ALL_V2_ENVIRONMENTS_GOAL_HIDDEN)
                             # these are ordered dicts where the key : value
@@ -210,25 +217,30 @@ class ToySimulation():
         inpt_obs = []
         success = []
         labels = []
+        gen_plans = []
         subset = torch.utils.data.Subset(self.dataset, envs)
         dataloader = DataLoader(subset, batch_size=200, shuffle=False)
         for inpt, label in dataloader:
-            result_pol = policy.forward(inpt)
+            plan_inpt = cat_obs_trj(inpt, label.size())
+            result_pol = policy.forward((plan_inpt, inpt))
             result = result_pol['gen_trj'].detach()
             f_result = result_pol['inpt_trj'].detach()
+            gen_plan = result_pol['gen_plan']
             trajectories += [result]
             f_results += [f_result]
             inpt_obs.append(inpt[:,:1])
             success.append(self.check_outpt_fct(label=label, outpt=result, tol_neg=self.neg_tol, tol_pos=self.pos_tol, window=self.window))
             labels.append(label)
+            gen_plans.append(gen_plan)
 
         trajectories = torch.cat([*trajectories], dim=0)
         f_results = torch.cat([*f_results], dim=0)
         inpt_obs = torch.cat([*inpt_obs], dim=0)
         success = torch.cat([*success], dim=0)
         labels = torch.cat([*labels], dim=0)
+        gen_plans = torch.cat([*gen_plans], dim=0)
 
-        return trajectories, inpt_obs, labels, success, f_results
+        return trajectories, inpt_obs, labels, success, f_results, gen_plans
 
 if __name__ == '__main__':
     DT = DefaultTraining()

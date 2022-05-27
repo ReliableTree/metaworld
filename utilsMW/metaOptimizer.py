@@ -1,14 +1,14 @@
-from sys import prefix
-from time import perf_counter
-from turtle import forward
 
 import higher
-from soupsieve import select
 import torch
 import torch.nn as nn
 import copy
-
-from zmq import device
+from pathlib import Path
+import sys
+parent_path = str(Path(__file__).parent.absolute())
+parent_path += '/../'
+sys.path.append(parent_path)
+from MetaWorld.utilsMW.utils import cat_obs_trj
 
 def loss_fct_proto(inpt, label):
     return ((inpt - label)**2)
@@ -65,6 +65,7 @@ class TaylorSignalModule(SignalModule):
 
     def loss_fct_tailor(self, inpt, label):
         #label = 1 means success
+
         label = label.reshape(-1).type(torch.long)
         label_one_hot = label#torch.nn.functional.one_hot(label, num_classes = 2)
 
@@ -104,12 +105,14 @@ class MetaModule():
             ts.meta_optimizer.step()
     
     def forward(self, inpt, epochs = 100):
-        #inpt = N x S x (out + obsv), N x S x obsv
+        #inpt = N x S x (obsv+out), N x S x obsv
+        self.main_signal.model.train()
         main_signal_state_dict= copy.deepcopy(self.main_signal.model.state_dict())
         gen_plan = self.main_signal.forward(inpt[0])['gen_trj']#(NxSxdmodel)
+        #print(gen_plan[0])
         gen_result = self.plan_decoder(gen_plan) #(NxSxout)
-        if self.return_mode == 0:
-            return {'gen_trj': gen_result, 'inpt_trj' : gen_result}
+        if self.return_mode == 0 or True:
+            return {'gen_trj': gen_result, 'inpt_trj' : gen_result, 'gen_plan':gen_plan.detach()}
         elif self.return_mode == 1:
             #opt_inpt = torch.clone(inpt.detach())
             opt_result = torch.clone(gen_result.detach())
@@ -132,11 +135,14 @@ class MetaModule():
                 self.last_update = self.optim_run
                 self.max_steps *= 1.05'''
             threshold = torch.tensor(0.95, device=gen_result.device)
+            tailor_loss = torch.zeros_like(opt_result, requires_grad=True).mean()
             while (best_expected_mean < threshold) and (step <= self.max_steps):
+                tailor_loss.backward()
+                optimizer.step()
                 optimizer.zero_grad()
                 '''tailor_inpt = {'result':opt_gen_result, 'inpt':inpt, 'original':gen_result}'''
                 tailor_results = []
-                new_inpt = torch.cat((opt_result, inpt[1]))
+                new_inpt = cat_obs_trj(inpt[1], opt_result)
                 gen_plan = self.main_signal.forward(new_inpt)['gen_trj']#(NxSxdmodel)
                 for ts in self.tailor_signals:
                     tailor_results.append(ts.forward(gen_plan))
@@ -155,15 +161,16 @@ class MetaModule():
                 #expected_succes_before = tailor_result.max(dim=-1)[1].type(torch.float).mean()
                 
                 #tailor_loss = tailor_loss + change_trj_loss
-                tailor_loss.backward()
-                optimizer.step()
+
                 
                 if best_expected_success is None:
                     best_expected_success = torch.clone(expected_succes)
                     best_trj = opt_result.detach()
+                    best_gen_plan = gen_plan.detach()
                     improve_mask_opt = torch.ones_like(expected_succes).type(torch.bool) * (best_expected_success < threshold)
                 else:
                     improve_mask = (expected_succes > best_expected_success)*improve_mask_opt
+                    best_gen_plan[improve_mask] = gen_plan[improve_mask].detach()
                     best_expected_success[improve_mask]= expected_succes[improve_mask].detach()
                     improve_mask_opt = improve_mask_opt * (best_expected_success < threshold)
                     best_trj[improve_mask] = opt_result[improve_mask].detach()
@@ -172,10 +179,13 @@ class MetaModule():
                 step += 1
             self.main_signal.model.load_state_dict(main_signal_state_dict)
             return {
-                'gen_trj': best_trj.detach(),
+                'gen_trj': gen_result.detach(),
                 'inpt_trj' : gen_result.detach(),
                 'exp_succ_after': best_expected_mean,
+                'gen_plan':best_gen_plan
             }
+
+
 
 def meta_optimizer(main_module, tailor_modules, inpt, d_out, epoch, debug_second, force_tailor_improvement, model_params):
     #build environmtn

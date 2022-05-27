@@ -27,9 +27,9 @@ from LanguagePolicies.utils.networkMeta import NetworkMeta
 from torch.utils.data import DataLoader
 
 # Learning rate for the adam optimizer
-LEARNING_RATE   = 1e-4
-META_LEARNING_RATE = 6e-5
-LR_META_OPTIMIZED = 5e-3
+LEARNING_RATE   = 1e-2#1e-4
+META_LEARNING_RATE = 1e-2#1e-4
+LR_META_OPTIMIZED = 1e-3#5e-3
 # Weight for the attention loss
 WEIGHT_ATTN     = 1.0
 # Weight for the motion primitive weight loss
@@ -86,9 +86,6 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
     model_setup['plan_nn']['plan']['seq_len'] = seq_len
     model   = PolicyTranslationModelTorch(od_path="", model_setup=model_setup, device=device).to(device)
     plan_decoder = TransformerDecoder(model_setup['plan_decoder'])
-    for inpt, outpt in train_loader:
-        result = model(inpt)
-        break
 
     if load_tol:
         with open(tol_path + 'tol.pkl', 'rb') as f:
