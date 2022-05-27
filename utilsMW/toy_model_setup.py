@@ -32,8 +32,8 @@ model_setup = {
                 'nhead':10,
                 'd_hid':80,
                 'nlayers':4,
-                'd_result':2,
+                'd_result':1,
     },
     'quick_val':False,
-    'val_every' : 4
+    'val_every' : 1
 }

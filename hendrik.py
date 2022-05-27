@@ -95,8 +95,8 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
         #-0.55, 0.70
         #-0.55, 0.3
         #-0.35, 0.1
-        tol_neg = -0.02*torch.ones([dim_out], device='cuda')
-        tol_pos = 0.15*torch.ones([dim_out], device='cuda')
+        tol_neg = -0.30*torch.ones([dim_out], device='cuda')
+        tol_pos = 0.45*torch.ones([dim_out], device='cuda')
         with open(tol_path + 'tol.pkl', 'wb') as f:
             pickle.dump((tol_neg, tol_pos), f)  
 
@@ -105,7 +105,7 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
     model_setup['tailor_transformer']['seq_len'] = seq_len
 
     tailor_models = []
-    for i in range(3):
+    for i in range(1):
         tailor_models.append(TailorTransformer(model_setup=model_setup['tailor_transformer']))
     #tailor_model = TailorTransformer(model_setup=model_setup['tailor_transformer'])
     
