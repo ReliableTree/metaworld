@@ -18,9 +18,9 @@ model_setup = {
         'use_plan_nn'   : True,
         'plan'     :{
             'use_layernorm':False,
-            'nhead':10,
-            'd_hid':50,
-            'd_model' : 50,
+            'nhead':4,
+            'd_hid':400,
+            'd_model' : 400,
             'nlayers':4,
             'dilation' : 2,
             'output_seq':True
@@ -31,5 +31,5 @@ model_setup = {
         'output_seq':False
     },
     'quick_val':False,
-    'val_every' : 1
+    'val_every' : 100
 }

@@ -40,6 +40,8 @@ class TorchDatasetMWToy(torch.utils.data.Dataset):
         path_label = path + 'label'
         self.data = torch.load(path_data).to(torch.float32).to(device)
         self.label = torch.load(path_label).to(torch.float32).to(device)
+        self.data = self.data[:10]
+        self.label = self.label[:10]
       
     def add_data(self, data, label):
         print(f'data: {data.shape}')

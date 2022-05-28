@@ -47,7 +47,7 @@ class TaylorSignalModule(SignalModule):
         print('super init')
         self.model.forward(inpt)
         #self.meta_optimizer = torch.optim.Adam(params=self.model.parameters(), lr=self.lr)
-        self.meta_optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.lr, weight_decay=1e-1)
+        self.meta_optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=1*self.lr, weight_decay=0)#1e-1)
 
     def forward(self, inpt):
         '''trajectories = inpt['result']
@@ -83,7 +83,7 @@ class MetaModule():
         self.return_mode = return_mode
         self.writer = writer
         self.optim_run = 0
-        self.max_steps =50
+        self.max_steps =5
         self.last_update = 0
         self.device = device
         self.plan_decoder = plan_decoder
@@ -106,12 +106,16 @@ class MetaModule():
     
     def forward(self, inpt, epochs = 100):
         #inpt = N x S x (obsv+out), N x S x obsv
-        self.main_signal.model.train()
+        self.main_signal.model.eval()
+        self.eval()
         main_signal_state_dict= copy.deepcopy(self.main_signal.model.state_dict())
         gen_plan = self.main_signal.forward(inpt[0])['gen_trj']#(NxSxdmodel)
         #print(gen_plan[0])
         gen_result = self.plan_decoder(gen_plan) #(NxSxout)
-        if self.return_mode == 0 or True:
+        new_inpt = cat_obs_trj(inpt[1], gen_result)
+        gen_plan = self.main_signal.forward(new_inpt)['gen_trj']#(NxSxdmodel)
+        gen_result = self.plan_decoder(gen_plan).detach() #(NxSxout)
+        if self.return_mode == 0:
             return {'gen_trj': gen_result, 'inpt_trj' : gen_result, 'gen_plan':gen_plan.detach()}
         elif self.return_mode == 1:
             #opt_inpt = torch.clone(inpt.detach())
@@ -128,8 +132,6 @@ class MetaModule():
             best_trj = torch.clone(gen_result)
             #for i in range(epochs):
             step = 0
-            for ts in self.tailor_signals:
-                ts.model.train()
             gen_result = gen_result.detach()
             '''if (self.optim_run+1) % 10 ==0 and self.optim_run != self.last_update:
                 self.last_update = self.optim_run
@@ -179,7 +181,7 @@ class MetaModule():
                 step += 1
             self.main_signal.model.load_state_dict(main_signal_state_dict)
             return {
-                'gen_trj': gen_result.detach(),
+                'gen_trj': best_trj.detach(),
                 'inpt_trj' : gen_result.detach(),
                 'exp_succ_after': best_expected_mean,
                 'gen_plan':best_gen_plan
