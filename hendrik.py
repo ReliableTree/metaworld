@@ -75,7 +75,7 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
     env_tag = 'pickplace'
     for inpt, outpt in train_loader:
         dim_in = inpt.size(1)
-        dim_out = outpt.size(-1)
+        dim_out = outpt.size(-1) + inpt.size(-1)
         seq_len = outpt.size(1)
         break
 
@@ -97,12 +97,12 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
         #-0.55, 0.70
         #-0.55, 0.3
         #-0.35, 0.1
-        tol_neg = -0.30*torch.ones([dim_out], device='cuda')
-        tol_pos = 0.45*torch.ones([dim_out], device='cuda')
+        tol_neg = -0.30*torch.ones([dim_out- inpt.size(-1)], device='cuda')
+        tol_pos = 0.45*torch.ones([dim_out- inpt.size(-1)], device='cuda')
         with open(tol_path + 'tol.pkl', 'wb') as f:
             pickle.dump((tol_neg, tol_pos), f)  
 
-    successSimulation = ToySimulation(neg_tol=tol_neg, pos_tol=tol_pos, check_outpt_fct=check_outpt, dataset=test_data, window = 0)
+    successSimulation = ToySimulation(neg_tol=tol_neg, pos_tol=tol_pos, check_outpt_fct=check_outpt, dataset=test_data, result_size=outpt.size(), window = 0)
 
     #model_setup['tailor_transformer']['seq_len'] = seq_len
 

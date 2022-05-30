@@ -19,7 +19,7 @@ import sys
 parent_path = str(Path(__file__).parent.absolute())
 parent_path += '/../'
 sys.path.append(parent_path)
-from MetaWorld.utilsMW.utils import cat_obs_trj
+from MetaWorld.utilsMW.utils import cat_obs_trj, right_stack_obj_trj
 
 from metaworld.envs import (ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE,
                             ALL_V2_ENVIRONMENTS_GOAL_HIDDEN)
@@ -200,12 +200,13 @@ class SuccessSimulation():
 
 
 class ToySimulation():
-    def __init__(self, neg_tol, pos_tol, check_outpt_fct, dataset, window = 9) -> None:
+    def __init__(self, neg_tol, pos_tol, check_outpt_fct, dataset, result_size, window = 9) -> None:
         self.dataset = dataset     
         self.neg_tol = neg_tol
         self.pos_tol = pos_tol
         self.check_outpt_fct = check_outpt_fct
         self.window = window
+        self.result_size = result_size
 
     def get_env(self, n, env_tag):
         indices = torch.randperm(len(self.dataset))[:n]
@@ -221,14 +222,16 @@ class ToySimulation():
         subset = torch.utils.data.Subset(self.dataset, envs)
         dataloader = DataLoader(subset, batch_size=200, shuffle=False)
         for inpt, label in dataloader:
-            plan_inpt = cat_obs_trj(inpt, label.size())
+            inpt = inpt.squeeze()
+            result_size = (inpt.size(0), self.result_size[1], self.result_size[2]+inpt.size(-1))
+            plan_inpt = right_stack_obj_trj(obs=inpt, inpt=result_size)
             result_pol = policy.forward((plan_inpt, inpt))
             result = result_pol['gen_trj'].detach()
             f_result = result_pol['inpt_trj'].detach()
             gen_plan = result_pol['gen_plan']
             trajectories += [result]
             f_results += [f_result]
-            inpt_obs.append(inpt[:,:1])
+            inpt_obs.append(inpt)
             success.append(self.check_outpt_fct(label=label, outpt=result, tol_neg=self.neg_tol, tol_pos=self.pos_tol, window=self.window))
             labels.append(label)
             gen_plans.append(gen_plan)

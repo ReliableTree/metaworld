@@ -48,6 +48,8 @@ class TorchDatasetMWToy(torch.utils.data.Dataset):
         print(f'label: {label.shape}')
         print(f'self.data: {self.data.shape}')
         print(f'self.label: {self.label.shape}')
+        if len(data.shape) == 2:
+            data = data.unsqueeze(1)
 
         if data.size(1) == 1:
             data = data.repeat([1,self.data.size(1), 1])

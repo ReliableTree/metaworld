@@ -1,4 +1,5 @@
 
+from turtle import forward
 import higher
 import torch
 import torch.nn as nn
@@ -8,7 +9,7 @@ import sys
 parent_path = str(Path(__file__).parent.absolute())
 parent_path += '/../'
 sys.path.append(parent_path)
-from MetaWorld.utilsMW.utils import cat_obs_trj
+from MetaWorld.utilsMW.utils import cat_obs_trj, right_stack_obj_trj
 
 def loss_fct_proto(inpt, label):
     return ((inpt - label)**2)
@@ -76,7 +77,7 @@ class TaylorSignalModule(SignalModule):
         return loss, loss_positive, loss_negative
 
 class MetaModule():
-    def __init__(self, main_signal, tailor_signals, plan_decoder, lr, return_mode=0, writer=None, device='cuda'):
+    def __init__(self, main_signal, tailor_signals, plan_decoder, lr, trj_size, return_mode=0, writer=None, device='cuda'):
         self.main_signal = main_signal
         self.tailor_signals = tailor_signals
         self.lr = lr
@@ -87,6 +88,7 @@ class MetaModule():
         self.last_update = 0
         self.device = device
         self.plan_decoder = plan_decoder
+        self.trj_size = trj_size
 
     def eval(self):
         for ts in self.tailor_signals:
@@ -104,7 +106,40 @@ class MetaModule():
         for ts in self.tailor_signals:
             ts.meta_optimizer.step()
     
-    def forward(self, inpt, epochs = 100):
+    def forward(self, inpt):
+        inpt = inpt[1]
+        result_size = (inpt.size(0), self.trj_size[1], self.trj_size[2]+inpt.size(-1))
+        obsv = inpt
+        plan1 = self.get_plan(obsv=inpt, result_size=result_size)
+        result1 = self.plan_decoder.forward(plan1)
+        trj1 = result1[:,:,:self.trj_size[-1]]
+        if self.return_mode == 0:
+            return {
+                'gen_trj': trj1.detach(),
+                'inpt_trj' : trj1.detach(),
+                'exp_succ_after': torch.tensor(0),
+                'gen_plan':plan1.detach()
+            }
+        else:
+            inpt2 = right_stack_obj_trj(obsv, result1)
+            plan2 = self.main_signal.model(inpt2)['gen_trj']
+            result2 = self.plan_decoder.forward(plan2)
+            trj2 = result2[:,:,:self.trj_size[-1]]
+
+            return {
+                    'gen_trj': trj2.detach(),
+                    'inpt_trj' : trj2.detach(),
+                    'exp_succ_after': torch.tensor(0),
+                    'gen_plan':plan2.detach()
+                }
+       
+
+    def get_plan(self, obsv, result_size):
+        inpt = right_stack_obj_trj(obs=obsv, inpt=result_size)
+        plan = self.main_signal.model(inpt)['gen_trj']
+        return plan
+
+    def forward1(self, inpt, epochs = 100):
         #inpt = N x S x (obsv+out), N x S x obsv
         self.main_signal.model.eval()
         self.eval()
