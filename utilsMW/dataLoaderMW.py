@@ -35,13 +35,13 @@ class TorchDatasetMW(torch.utils.data.Dataset):
             return self.data[index], self.label[index]
 
 class TorchDatasetMWToy(torch.utils.data.Dataset):
-    def __init__(self, path, device = 'cpu'):
+    def __init__(self, path, device = 'cpu', num_ele = 0):
         path_data = path + 'inpt'
         path_label = path + 'label'
-        self.data = torch.load(path_data).to(torch.float32).to(device)
-        self.label = torch.load(path_label).to(torch.float32).to(device)
-        self.data = self.data[:10]
-        self.label = self.label[:10]
+        self.data = torch.load(path_data).to(torch.float32).to(device)[-num_ele:]
+        self.label = torch.load(path_label).to(torch.float32).to(device)[-num_ele:]
+        self.data = self.data
+        self.label = self.label
       
     def add_data(self, data, label):
         print(f'data: {data.shape}')

@@ -122,7 +122,8 @@ class MetaModule():
             }
         else:
             inpt2 = right_stack_obj_trj(obsv, result1)
-            plan2 = self.main_signal.model(inpt2)['gen_trj']
+            print(f'plan inpt 2: {inpt2.shape}')
+            plan2 = self.main_signal.model(inputs=inpt2)['gen_trj']
             result2 = self.plan_decoder.forward(plan2)
             trj2 = result2[:,:,:self.trj_size[-1]]
 
@@ -136,7 +137,8 @@ class MetaModule():
 
     def get_plan(self, obsv, result_size):
         inpt = right_stack_obj_trj(obs=obsv, inpt=result_size)
-        plan = self.main_signal.model(inpt)['gen_trj']
+        print(f'model input: {inpt.size()}')
+        plan = self.main_signal.model(inputs =  inpt)['gen_trj']
         return plan
 
     def forward1(self, inpt, epochs = 100):
@@ -272,7 +274,7 @@ def meta_optimizer(main_module, tailor_modules, inpt, d_out, epoch, debug_second
             #print(f'in tailor loss: {tailor_loss}')
 
         #second forward pass
-        result = higher_main.model(inpt)
+        result = higher_main.model(inputs=inpt)
         #print(f'result shape: {result["gen_trj"].shape}')
         #print(f'result: {result}')
         loss, debug_dict_main = higher_main.loss_fct(d_out = d_out, result=result, model_params=model_params)

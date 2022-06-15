@@ -31,5 +31,5 @@ model_setup = {
         'output_seq':False
     },
     'quick_val':False,
-    'val_every' : 100
+    'val_every' : 1
 }
