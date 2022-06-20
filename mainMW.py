@@ -25,7 +25,7 @@ from utilsMW.makeTrainingData import SuccessSimulation
 
 # Learning rate for the adam optimizer
 #LEARNING_RATE   = 0.00005
-LEARNING_RATE   = 5e-5
+LEARNING_RATE   = 5e-4
 # Weight for the attention loss
 WEIGHT_ATTN     = 1.0
 # Weight for the motion primitive weight loss
@@ -66,7 +66,7 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
 
     tailor_models = [tailor_model]
     #tailor_models=[]
-    data = TorchDatasetMW(path=path_dict['META_WORLD'], device=device, n=10)
+    data = TorchDatasetMW(path=path_dict['META_WORLD'], device=device, n=100)
 
     #train_indices = torch.arange(10)+20
     #train_data = torch.utils.data.Subset(data, train_indices)

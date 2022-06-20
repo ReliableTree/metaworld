@@ -45,5 +45,5 @@ model_setup = {
 
     },
     'quick_val':False,
-    'val_every' : 300
+    'val_every' : 1000
 }
