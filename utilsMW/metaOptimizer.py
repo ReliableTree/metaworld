@@ -50,7 +50,15 @@ class TaylorSignalModule(SignalModule):
     def forward(self, inpt):
         trajectories = inpt['result']
         original_trajectories = inpt['original']
-        inpt_obs = inpt['inpt'][:,:1]
+        inpt_obs = inpt['inpt']
+        if len(inpt_obs.shape) == 2:
+            inpt_obs = inpt_obs.unsqueeze(1)
+        elif len(inpt_obs.shape) == 3:
+            inpt_obs = inpt_obs[:,:1]
+        else:
+            print('wrong')
+            print(1/0)
+
         inpt_obs = inpt_obs.repeat((1, trajectories.size(1), 1))
         #inpt_super = torch.concat((trajectories, original_trajectories, inpt_obs), dim = -1)
         inpt_super = torch.concat((trajectories, inpt_obs), dim = -1)
@@ -248,6 +256,7 @@ def tailor_optimizer(tailor_modules, succ, failed):
     ftrj = torch.cat((s_ftrj, f_ftrj), dim=0)
     inpt = torch.cat((s_obs, f_obs), dim=0)
     label = torch.cat((success, fail), dim=0)
+
     tailor_results = []
     for i, tailor_module in enumerate(tailor_modules):
         tailor_module.meta_optimizer.zero_grad()
