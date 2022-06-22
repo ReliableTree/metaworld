@@ -1,13 +1,15 @@
-from sys import prefix
-from time import perf_counter
-from turtle import forward
 
+from turtle import forward
 import higher
 import torch
 import torch.nn as nn
 import copy
-
-from zmq import device
+from pathlib import Path
+import sys
+parent_path = str(Path(__file__).parent.absolute())
+parent_path += '/../'
+sys.path.append(parent_path)
+from MetaWorld.utilsMW.utils import cat_obs_trj, right_stack_obj_trj
 
 def loss_fct_proto(inpt, label):
     return ((inpt - label)**2)
@@ -43,25 +45,20 @@ class TaylorSignalModule(SignalModule):
 
     def init_model(self, inpt):
         self.model.super_init = False
+        print('super init')
         self.model.forward(inpt)
         #self.meta_optimizer = torch.optim.Adam(params=self.model.parameters(), lr=self.lr)
-        self.meta_optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.lr, weight_decay=1e-1)
+        self.meta_optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=1*self.lr, weight_decay=0)#1e-1)
 
     def forward(self, inpt):
-        trajectories = inpt['result']
+        '''trajectories = inpt['result']
         original_trajectories = inpt['original']
-        inpt_obs = inpt['inpt']
-        if len(inpt_obs.shape) == 2:
-            inpt_obs = inpt_obs.unsqueeze(1)
-        elif len(inpt_obs.shape) == 3:
-            inpt_obs = inpt_obs[:,:1]
-        else:
-            print('wrong')
-            print(1/0)
-
-        inpt_obs = inpt_obs.repeat((1, trajectories.size(1), 1))
+        inpt_obs = inpt['inpt'][:,:1]'''
+        #inpt_super = inpt['plans']
+        inpt_super =  inpt
+        #inpt_obs = inpt_obs.repeat((1, trajectories.size(1), 1))
         #inpt_super = torch.concat((trajectories, original_trajectories, inpt_obs), dim = -1)
-        inpt_super = torch.concat((trajectories, inpt_obs), dim = -1)
+        #inpt_super = torch.concat((trajectories, inpt_obs), dim = -1)
         result =  super().forward(inpt_super)
 
         self.lr = self.meta_optimizer.param_groups[0]['lr']
@@ -69,8 +66,9 @@ class TaylorSignalModule(SignalModule):
 
     def loss_fct_tailor(self, inpt, label):
         #label = 1 means success
+
         label = label.reshape(-1).type(torch.long)
-        label_one_hot = torch.nn.functional.one_hot(label, num_classes = 2)
+        label_one_hot = label#torch.nn.functional.one_hot(label, num_classes = 2)
 
         inpt = inpt['tailor_result']
         loss_negative = ((inpt[label==0] - label_one_hot[label==0])**2).mean()
@@ -79,7 +77,7 @@ class TaylorSignalModule(SignalModule):
         return loss, loss_positive, loss_negative
 
 class MetaModule():
-    def __init__(self, main_signal, tailor_signals, lr, return_mode=0, writer=None, device='cuda'):
+    def __init__(self, main_signal, tailor_signals, plan_decoder, lr, trj_size, return_mode=0, writer=None, device='cuda'):
         self.main_signal = main_signal
         self.tailor_signals = tailor_signals
         self.lr = lr
@@ -89,6 +87,8 @@ class MetaModule():
         self.max_steps =5
         self.last_update = 0
         self.device = device
+        self.plan_decoder = plan_decoder
+        self.trj_size = trj_size
 
     def eval(self):
         for ts in self.tailor_signals:
@@ -97,79 +97,134 @@ class MetaModule():
     def train(self):
         for ts in self.tailor_signals:
             ts.model.train()
+
+    def zero_grad(self):
+        for ts in self.tailor_signals:
+            ts.meta_optimizer.zero_grad()
+
+    def step(self):
+        for ts in self.tailor_signals:
+            ts.meta_optimizer.step()
     
-    def forward(self, inpt, epochs = 100):
-        main_signal_state_dict= copy.deepcopy(self.main_signal.model.state_dict())
-        gen_result = self.main_signal.forward(inpt)['gen_trj']
+    def forward(self, inpt):
+        inpt = inpt[1]
+        result_size = (inpt.size(0), self.trj_size[1], self.trj_size[2]+inpt.size(-1))
+        obsv = inpt
+        plan1 = self.get_plan(obsv=inpt, result_size=result_size)
+        result1 = self.plan_decoder.forward(plan1)
+        trj1 = result1[:,:,:self.trj_size[-1]]
         if self.return_mode == 0:
-            return {'gen_trj': gen_result, 'inpt_trj' : gen_result}
+            return {
+                'gen_trj': trj1.detach(),
+                'inpt_trj' : trj1.detach(),
+                'exp_succ_after': torch.tensor(0),
+                'gen_plan':plan1.detach()
+            }
+        else:
+            inpt2 = right_stack_obj_trj(obsv, result1)
+            print(f'plan inpt 2: {inpt2.shape}')
+            plan2 = self.main_signal.model(inputs=inpt2)['gen_trj']
+            result2 = self.plan_decoder.forward(plan2)
+            trj2 = result2[:,:,:self.trj_size[-1]]
+
+            return {
+                    'gen_trj': trj2.detach(),
+                    'inpt_trj' : trj2.detach(),
+                    'exp_succ_after': torch.tensor(0),
+                    'gen_plan':plan2.detach()
+                }
+       
+
+    def get_plan(self, obsv, result_size):
+        inpt = right_stack_obj_trj(obs=obsv, inpt=result_size)
+        print(f'model input: {inpt.size()}')
+        plan = self.main_signal.model(inputs =  inpt)['gen_trj']
+        return plan
+
+    def forward1(self, inpt, epochs = 100):
+        #inpt = N x S x (obsv+out), N x S x obsv
+        self.main_signal.model.eval()
+        self.eval()
+        main_signal_state_dict= copy.deepcopy(self.main_signal.model.state_dict())
+        gen_plan = self.main_signal.forward(inpt[0])['gen_trj']#(NxSxdmodel)
+        #print(gen_plan[0])
+        gen_result = self.plan_decoder(gen_plan) #(NxSxout)
+        new_inpt = cat_obs_trj(inpt[1], gen_result)
+        gen_plan = self.main_signal.forward(new_inpt)['gen_trj']#(NxSxdmodel)
+        gen_result = self.plan_decoder(gen_plan).detach() #(NxSxout)
+        if self.return_mode == 0:
+            return {'gen_trj': gen_result, 'inpt_trj' : gen_result, 'gen_plan':gen_plan.detach()}
         elif self.return_mode == 1:
             #opt_inpt = torch.clone(inpt.detach())
-            opt_gen_result = torch.clone(gen_result.detach())
-            opt_gen_result.requires_grad_(True)
+            opt_result = torch.clone(gen_result.detach())
+            opt_result.requires_grad_(True)
             #optimizer =  torch.optim.Adam(self.main_signal.model.parameters(), lr=self.lr)
             #optimizer = torch.optim.SGD(self.main_signal.model.parameters(), lr=self.lr)
             #optimizer = torch.optim.SGD([opt_gen_result], lr=self.lr)
-            optimizer = torch.optim.Adam([opt_gen_result], lr=self.lr)
+            optimizer = torch.optim.Adam([opt_result], lr=self.lr)
             #optimizer = torch.optim.AdamW(self.main_signal.model.parameters(), lr=self.lr)
 
             best_expected_success = None
-            best_expected_mean = torch.tensor(float('inf'))
+            best_expected_mean = torch.tensor(0, device=gen_result.device)
             best_trj = torch.clone(gen_result)
             #for i in range(epochs):
             step = 0
-            for ts in self.tailor_signals:
-                ts.model.eval()
             gen_result = gen_result.detach()
             '''if (self.optim_run+1) % 10 ==0 and self.optim_run != self.last_update:
                 self.last_update = self.optim_run
                 self.max_steps *= 1.05'''
-            while best_expected_mean > -torch.log(torch.tensor(0.95)) and (step <= self.max_steps):
+            threshold = torch.tensor(0.95, device=gen_result.device)
+            tailor_loss = torch.zeros_like(opt_result, requires_grad=True).mean()
+            while (best_expected_mean < threshold) and (step <= self.max_steps):
+                tailor_loss.backward()
+                optimizer.step()
                 optimizer.zero_grad()
-                tailor_inpt = {'result':opt_gen_result, 'inpt':inpt, 'original':gen_result}
+                '''tailor_inpt = {'result':opt_gen_result, 'inpt':inpt, 'original':gen_result}'''
                 tailor_results = []
+                new_inpt = cat_obs_trj(inpt[1], opt_result)
+                gen_plan = self.main_signal.forward(new_inpt)['gen_trj']#(NxSxdmodel)
                 for ts in self.tailor_signals:
-                    tailor_results.append(ts.forward(tailor_inpt))
+                    tailor_results.append(ts.forward(gen_plan))
                 #tailor_result = self.tailor_signal.forward(tailor_inpt)
-                expected_succes_before = torch.ones_like(tailor_results[0].max(dim=-1)[1])
-                goal_label = torch.ones_like(tailor_results[0][:,0])
+                expected_succes = torch.ones_like(tailor_results[0])
+                goal_label = torch.ones_like(tailor_results[0])
                 tailor_loss = torch.zeros(1, device=goal_label.device, requires_grad=True)
                 for i, tr in enumerate(tailor_results):
-                    expected_succes_before = expected_succes_before * tr.max(dim=-1)[1]
+                    #expected_succes_before = expected_succes_before * tr.max(dim=-1)[1]
+                    expected_succes = expected_succes*tr
                     tailor_loss_inpt = {'tailor_result': tr}
                     tailor_loss = tailor_loss+self.tailor_signals[i].loss_fct_tailor(inpt=tailor_loss_inpt, label=goal_label)[0]
 
                 tailor_loss = tailor_loss/len(self.tailor_signals)
-                expected_succes_before = expected_succes_before.type(torch.float).mean()
+                #expected_succes_mean = expected_succes.type(torch.float).mean()
                 #expected_succes_before = tailor_result.max(dim=-1)[1].type(torch.float).mean()
                 
                 #tailor_loss = tailor_loss + change_trj_loss
-                tailor_loss.backward()
-                optimizer.step()
-                #opt_gen_result = self.main_signal.forward(inpt)['gen_trj']
-                tailor_after_inpt = {'result':opt_gen_result, 'inpt':inpt, 'original':gen_result}
-                neg_log_tailor_results_after = torch.zeros(inpt.size(0), device=expected_succes_before.device)
-                for i, ts in enumerate(self.tailor_signals):
-                    neg_log_tailor_results_after = neg_log_tailor_results_after-torch.log(ts.forward(tailor_after_inpt)[:,1])
-                #expected_succes_after = tailor_result_after[:,1].mean()
-                #expected_succes_after = tailor_result_after.max(dim=-1)[1].type(torch.float).mean()
+
+                
                 if best_expected_success is None:
-                    best_expected_success = torch.clone(neg_log_tailor_results_after)
-                    best_trj = opt_gen_result.detach()
+                    best_expected_success = torch.clone(expected_succes)
+                    best_trj = opt_result.detach()
+                    best_gen_plan = gen_plan.detach()
+                    improve_mask_opt = torch.ones_like(expected_succes).type(torch.bool) * (best_expected_success < threshold)
                 else:
-                    improve_mask = neg_log_tailor_results_after < best_expected_success
-                    best_expected_success[improve_mask]= neg_log_tailor_results_after[improve_mask].detach()
-                    best_trj[improve_mask] = opt_gen_result[improve_mask].detach()
+                    improve_mask = (expected_succes > best_expected_success)*improve_mask_opt
+                    best_gen_plan[improve_mask] = gen_plan[improve_mask].detach()
+                    best_expected_success[improve_mask]= expected_succes[improve_mask].detach()
+                    improve_mask_opt = improve_mask_opt * (best_expected_success < threshold)
+                    best_trj[improve_mask] = opt_result[improve_mask].detach()
                 best_expected_mean = best_expected_success.mean()
-                self.writer({str(self.optim_run) +' in optimisation ':torch.exp(-best_expected_mean)}, train=False, step=step)
+                self.writer({str(self.optim_run) +' in optimisation ':best_expected_mean}, train=False, step=step)
                 step += 1
             self.main_signal.model.load_state_dict(main_signal_state_dict)
             return {
                 'gen_trj': best_trj.detach(),
                 'inpt_trj' : gen_result.detach(),
-                'exp_succ_bef': expected_succes_before,
                 'exp_succ_after': best_expected_mean,
+                'gen_plan':best_gen_plan
             }
+
+
 
 def meta_optimizer(main_module, tailor_modules, inpt, d_out, epoch, debug_second, force_tailor_improvement, model_params):
     #build environmtn
@@ -219,7 +274,7 @@ def meta_optimizer(main_module, tailor_modules, inpt, d_out, epoch, debug_second
             #print(f'in tailor loss: {tailor_loss}')
 
         #second forward pass
-        result = higher_main.model(inpt)
+        result = higher_main.model(inputs=inpt)
         #print(f'result shape: {result["gen_trj"].shape}')
         #print(f'result: {result}')
         loss, debug_dict_main = higher_main.loss_fct(d_out = d_out, result=result, model_params=model_params)
@@ -249,51 +304,67 @@ def tailor_optimizer(tailor_modules, succ, failed):
             ob = ob.unsqueeze(0)
         for ob in failed:
             ob = ob.unsqueeze(0)
-    s_trj, s_obs, success, s_ftrj = succ
-    f_trj, f_obs, fail, f_ftrj = failed
+    #s_trj, s_obs, success, s_ftrj = succ
+    #f_trj, f_obs, fail, f_ftrj = failed
+    s_plans, success = succ
+    f_plans, fail = failed
 
-    trajectories = torch.cat((s_trj, f_trj), dim=0)
+    '''trajectories = torch.cat((s_trj, f_trj), dim=0)
     ftrj = torch.cat((s_ftrj, f_ftrj), dim=0)
     inpt = torch.cat((s_obs, f_obs), dim=0)
+    label = torch.cat((success, fail), dim=0)'''
+    plans = torch.cat((s_plans, f_plans), dim=0)
     label = torch.cat((success, fail), dim=0)
-
     tailor_results = []
     for i, tailor_module in enumerate(tailor_modules):
         tailor_module.meta_optimizer.zero_grad()
-        tailor_inpt = {}
-        tailor_inpt['result'] = trajectories
-        tailor_inpt['inpt'] = inpt
-        tailor_inpt['original'] = ftrj
-        tailor_result = tailor_module.forward(tailor_inpt)
-        tailor_dist = torch.zeros(1, device=tailor_result.device, requires_grad=True)
-        for tr in tailor_results:
-            tailor_dist = tailor_dist-((tailor_result - tr)**2).mean()
-        tailor_dist = tailor_dist/(len(tailor_results)+1)
+        tailor_result = tailor_module.forward(plans)
+        tailor_results.append(tailor_result)
         tailor_loss_input = {}
         tailor_loss_input['tailor_result'] = tailor_result
         tailor_loss, loss_positive, loss_negative = tailor_module.loss_fct_tailor(inpt = tailor_loss_input, label = label)
         if not torch.isnan(tailor_loss):
-            tailor_results.append(torch.clone(tailor_result.detach()))
-            debug_dict['tailor dist ' +str(i)] = tailor_dist.mean()
-            tailor_loss_dist = (tailor_loss + 10*tailor_dist).mean()
-            tailor_loss_dist.backward()
-            tailor_module.meta_optimizer.step()
             debug_dict['tailor loss '+str(i)] = tailor_loss.detach()
             debug_dict['tailor loss positive '+str(i)] = loss_positive.detach()
             debug_dict['tailor loss negative '+str(i)] = loss_negative.detach()
-
             add_max_val_to_dict(debug_dict, 'tailor loss', tailor_loss.detach(), tm = i)
             add_max_val_to_dict(debug_dict, 'tailor loss positive', loss_positive.detach(), tm = i)
             add_max_val_to_dict(debug_dict, 'tailor loss negative', loss_negative.detach(), tm = i)
-    return debug_dict
+    result = torch.ones_like(tailor_results[0])
+
+    for tr in tailor_results:
+        result = result * tr
+    tailor_loss_input = {}
+    tailor_loss_input['tailor_result'] = result
+    tailor_loss, loss_positive, loss_negative = tailor_module.loss_fct_tailor(inpt = tailor_loss_input, label = label)
+    #result_negatives = torch.ones_like(tr[result < 0.1])
+    '''if len(result_negatives) > 0:
+        for tr in tailor_results:
+            result_negatives = result_negatives * tr[result < 0.1]
+        #print(f'result negative: {result_negatives.shape}')
+        result_negatives = result_negatives.mean()
+        tailor_loss = tailor_loss + result_negatives'''
+    
+    '''tailor_loss.backward()
+    for tm in tailor_modules:
+        tm.meta_optimizer.step()'''
+
+    debug_dict['tailor loss'] = tailor_loss.detach()
+    debug_dict['tailor loss positive'] = loss_positive.detach()
+    debug_dict['tailor loss negative'] = loss_negative.detach()
+    
+    return tailor_loss, debug_dict
 
 def add_max_val_to_dict(dict, key, val, tm):
+
     if key in dict:
-        dict[key] = torch.max(dict[key], val)
         if val > dict[key]:
             dict[key + ' max'] = torch.tensor(tm)
+        dict[key] = torch.max(dict[key], val)
+
     else:
         dict[key] = val
+        dict[key + ' max'] = torch.tensor(tm)
 
 
 if __name__ == '__main__':
