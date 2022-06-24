@@ -36,14 +36,14 @@ model_setup = {
                 'num_upconvs':4,
                 'stride':3,
                 'd_output':5,
-                'd_model' : 60,
-                'nhead':6,
-                'd_hid':60,
-                'nlayers':4,
+                'd_model' : 200,
+                'nhead':10,
+                'd_hid':200,
+                'nlayers':3,
                 'd_result':2,
                 'seq_len': 53,
 
     },
     'quick_val':False,
-    'val_every' : 400
+    'val_every' : 300
 }

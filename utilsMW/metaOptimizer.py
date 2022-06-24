@@ -37,7 +37,7 @@ class TaylorSignalModule(SignalModule):
     def __init__(self, model, loss_fct, lr, mlr):
         super().__init__(model=model, loss_fct=loss_fct)
         #self.meta_optimizer = torch.optim.Adam(params=self.model.parameters(), lr=lr)
-        self.meta_optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=lr, weight_decay=1e-1)
+        self.meta_optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=lr, weight_decay=1e-4)
         self.mlr = mlr
         self.lr = lr
 
@@ -78,7 +78,7 @@ class MetaModule():
         self.return_mode = return_mode
         self.writer = writer
         self.optim_run = 0
-        self.max_steps =5
+        self.max_steps = 500
         self.last_update = 0
         self.device = device
 
@@ -116,7 +116,7 @@ class MetaModule():
             '''if (self.optim_run+1) % 10 ==0 and self.optim_run != self.last_update:
                 self.last_update = self.optim_run
                 self.max_steps *= 1.05'''
-            while best_expected_mean > -torch.log(torch.tensor(0.95)) and (step <= self.max_steps):
+            while best_expected_mean > -torch.log(torch.tensor(0.65)) and (step <= self.max_steps):
                 optimizer.zero_grad()
                 tailor_inpt = {'result':opt_gen_result, 'inpt':inpt, 'original':gen_result}
                 tailor_results = []
