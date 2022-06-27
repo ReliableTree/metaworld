@@ -36,8 +36,8 @@ class SignalModule():
 class TaylorSignalModule(SignalModule):
     def __init__(self, model, loss_fct, lr, mlr):
         super().__init__(model=model, loss_fct=loss_fct)
-        #self.meta_optimizer = torch.optim.Adam(params=self.model.parameters(), lr=lr)
-        self.meta_optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=lr, weight_decay=1e-4)
+        self.meta_optimizer = torch.optim.Adam(params=self.model.parameters(), lr=lr)
+        #self.meta_optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=lr, weight_decay=0)
         self.mlr = mlr
         self.lr = lr
 
@@ -49,7 +49,8 @@ class TaylorSignalModule(SignalModule):
 
     def forward(self, inpt):
         trajectories = inpt['result']
-        original_trajectories = inpt['original']
+        if len(trajectories.shape) == 2:
+            trajectories = trajectories.unsqueeze(0)
         inpt_obs = inpt['inpt'][:,:1]
         inpt_obs = inpt_obs.repeat((1, trajectories.size(1), 1))
         #inpt_super = torch.concat((trajectories, original_trajectories, inpt_obs), dim = -1)
@@ -234,7 +235,7 @@ def meta_optimizer(main_module, tailor_modules, inpt, d_out, epoch, debug_second
 
     return main_module, tailor_modules, result, debug_dict
 
-def tailor_optimizer(tailor_modules, succ, failed):
+def tailor_optimizer(tailor_modules, succ, failed, train):
     debug_dict = {}
     if len(succ[0].shape) < 3:
         for ob in succ:
@@ -243,10 +244,13 @@ def tailor_optimizer(tailor_modules, succ, failed):
             ob = ob.unsqueeze(0)
     s_trj, s_obs, success, s_ftrj = succ
     f_trj, f_obs, fail, f_ftrj = failed
-
     trajectories = torch.cat((s_trj, f_trj), dim=0)
     ftrj = torch.cat((s_ftrj, f_ftrj), dim=0)
     inpt = torch.cat((s_obs, f_obs), dim=0)
+    if len(success.shape) == 0:
+        success = success.reshape(1)
+    if len(fail.shape) == 0:
+        fail = fail.reshape(1)
     label = torch.cat((success, fail), dim=0)
     tailor_results = []
     for i, tailor_module in enumerate(tailor_modules):
@@ -256,22 +260,27 @@ def tailor_optimizer(tailor_modules, succ, failed):
         tailor_inpt['inpt'] = inpt
         tailor_inpt['original'] = ftrj
         tailor_result = tailor_module.forward(tailor_inpt)
-        tailor_dist = torch.zeros(1, device=tailor_result.device, requires_grad=True)
-        for tr in tailor_results:
-            tailor_dist = tailor_dist-((tailor_result - tr)**2).mean()
-        tailor_dist = tailor_dist/(len(tailor_results)+1)
         tailor_loss_input = {}
         tailor_loss_input['tailor_result'] = tailor_result
         tailor_loss, loss_positive, loss_negative = tailor_module.loss_fct_tailor(inpt = tailor_loss_input, label = label)
         if not torch.isnan(tailor_loss):
             tailor_results.append(torch.clone(tailor_result.detach()))
-            debug_dict['tailor dist ' +str(i)] = tailor_dist.mean()
-            tailor_loss_dist = (tailor_loss + 10*tailor_dist).mean()
-            tailor_loss_dist.backward()
-            tailor_module.meta_optimizer.step()
+            if train:
+                #tailor_loss_dist.backward()
+                tailor_loss.backward()
+                tailor_module.meta_optimizer.step()
             debug_dict['tailor loss '+str(i)] = tailor_loss.detach()
             debug_dict['tailor loss positive '+str(i)] = loss_positive.detach()
             debug_dict['tailor loss negative '+str(i)] = loss_negative.detach()
+            expected_success = tailor_result[:,1] > 0.5
+            tailor_acc = (expected_success.reshape(-1) == label.reshape(-1)).type(torch.float).mean()
+            debug_dict['tailor acc 0.5'+str(i)] = tailor_acc
+            expected_success95 = tailor_result[:,1] > 0.95
+            tailor_acc95 = (expected_success95.reshape(-1) == label.reshape(-1)).type(torch.float).mean()
+            debug_dict['tailor acc 0.95'+str(i)] = tailor_acc95
+            expected_success25 = tailor_result[:,1] > 0.25
+            tailor_acc25 = (expected_success25.reshape(-1) == label.reshape(-1)).type(torch.float).mean()
+            debug_dict['tailor acc 0.25'+str(i)] = tailor_acc25
 
             add_max_val_to_dict(debug_dict, 'tailor loss', tailor_loss.detach(), tm = i)
             add_max_val_to_dict(debug_dict, 'tailor loss positive', loss_positive.detach(), tm = i)

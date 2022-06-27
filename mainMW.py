@@ -77,15 +77,15 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
     #eval_data = torch.utils.data.Subset(data, eval_indices)
     eval_loader = DataLoader(data, batch_size=batch_size, shuffle=True)
     env_tag = 'pickplace'
-    network = NetworkMeta(model, tailor_models=tailor_models, env_tag=env_tag, successSimulation=SuccessSimulation(), data_path=path_dict['DATA_PATH'],logname=logname, lr=LEARNING_RATE, mlr=META_LEARNING_RATE, mo_lr=LR_META_OPTIMIZED, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_gen_trj = WEIGHT_GEN_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, lw_fod=0, gamma_sl = 1, device=device, tboard=tboard)
+    network = NetworkMeta(model, model_setup=model_setup, env_tag=env_tag, successSimulation=SuccessSimulation(), data_path=path_dict['DATA_PATH'],logname=logname, lr=LEARNING_RATE, mlr=META_LEARNING_RATE, mo_lr=LR_META_OPTIMIZED, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_gen_trj = WEIGHT_GEN_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, lw_fod=0, gamma_sl = 1, device=device, tboard=tboard)
     network.setDatasets(train_loader=train_loader, val_loader=eval_loader)
 
-    network.setup_model(model_params=model_setup)
+    network.setup_model()
+    network.setup_tailor(set_tailor_data=True)
+    network.set_meta_module()
     if model_path is not None:
         network.load_state_dict(torch.load(model_path + 'policy_network', map_location='cuda:0'), strict=False)
     count_parameters(network)
-    print('in tailor transfo:')
-    count_parameters(tailor_model)
 
     #print(f'number of param,eters in net: {len(list(network.parameters()))} and number of applied: {i}')
     #network.load_state_dict(torch.load(MODEL_PATH), strict=True)

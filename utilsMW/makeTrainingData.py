@@ -141,7 +141,7 @@ class SuccessSimulation():
             envs.append([env, gt_policy])
         return envs
 
-    def get_success(self, policy, envs):
+    def get_success(self, policy, envs, device = 'cuda', her=False):
         trajectories = []
         inpt_obs = []
         success = []
@@ -187,7 +187,7 @@ class SuccessSimulation():
             success = torch.cat([*success], dim=0)
             f_results = torch.cat([*f_results], dim=0)
 
-            return trajectories, inpt_obs, labels, success, f_results
+            return trajectories, inpt_obs, labels, success, success
         else:
             return False
 
