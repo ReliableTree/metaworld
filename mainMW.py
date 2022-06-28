@@ -6,7 +6,6 @@ from tests.metaworld.envs.mujoco.sawyer_xyz import utils
 parent_path = str(Path(__file__).parent.absolute())
 parent_path += '/../'
 sys.path.append(parent_path)
-from LanguagePolicies.model_src.modelTorch import PolicyTranslationModelTorch
 from LanguagePolicies.utils.Transformer import TailorTransformer
 from LanguagePolicies.utils.networkMeta import NetworkMeta
 import hashids
@@ -60,12 +59,7 @@ def count_parameters(model):
     return total_params
 
 def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, tboard, model_setup, train_size = 1):
-    model   = PolicyTranslationModelTorch(od_path="", model_setup=model_setup, device=device).to(device)
 
-    tailor_model = TailorTransformer(model_setup=model_setup['tailor_transformer'])
-
-    tailor_models = [tailor_model]
-    #tailor_models=[]
     data = TorchDatasetMW(path=path_dict['META_WORLD'], device=device, n=10)
 
     #train_indices = torch.arange(10)+20
@@ -77,7 +71,7 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
     #eval_data = torch.utils.data.Subset(data, eval_indices)
     eval_loader = DataLoader(data, batch_size=batch_size, shuffle=True)
     env_tag = 'pickplace'
-    network = NetworkMeta(model, model_setup=model_setup, env_tag=env_tag, successSimulation=SuccessSimulation(), data_path=path_dict['DATA_PATH'],logname=logname, lr=LEARNING_RATE, mlr=META_LEARNING_RATE, mo_lr=LR_META_OPTIMIZED, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_gen_trj = WEIGHT_GEN_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, lw_fod=0, gamma_sl = 1, device=device, tboard=tboard)
+    network = NetworkMeta(model_setup=model_setup, env_tag=env_tag, successSimulation=SuccessSimulation(), data_path=path_dict['DATA_PATH'],logname=logname, lr=LEARNING_RATE, mlr=META_LEARNING_RATE, mo_lr=LR_META_OPTIMIZED, lw_atn=WEIGHT_ATTN, lw_w=WEIGHT_W, lw_trj=WEIGHT_TRJ, lw_gen_trj = WEIGHT_GEN_TRJ, lw_dt=WEIGHT_DT, lw_phs=WEIGHT_PHS, lw_fod=0, gamma_sl = 1, device=device, tboard=tboard)
     network.setDatasets(train_loader=train_loader, val_loader=eval_loader)
 
     network.setup_model()
@@ -85,6 +79,7 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
     network.set_meta_module()
     if model_path is not None:
         network.load_state_dict(torch.load(model_path + 'policy_network', map_location='cuda:0'), strict=False)
+        network.load_network(path_to_file=model_path, device='cuda')
     count_parameters(network)
 
     #print(f'number of param,eters in net: {len(list(network.parameters()))} and number of applied: {i}')

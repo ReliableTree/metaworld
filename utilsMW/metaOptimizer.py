@@ -36,7 +36,7 @@ class SignalModule():
 class TaylorSignalModule(SignalModule):
     def __init__(self, model, loss_fct, lr, mlr):
         super().__init__(model=model, loss_fct=loss_fct)
-        self.meta_optimizer = torch.optim.Adam(params=self.model.parameters(), lr=lr)
+        self.meta_optimizer = torch.optim.Adam(params=self.model.parameters(), lr=lr, weight_decay=0)
         #self.meta_optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=lr, weight_decay=0)
         self.mlr = mlr
         self.lr = lr
@@ -117,7 +117,7 @@ class MetaModule():
             '''if (self.optim_run+1) % 10 ==0 and self.optim_run != self.last_update:
                 self.last_update = self.optim_run
                 self.max_steps *= 1.05'''
-            while best_expected_mean > -torch.log(torch.tensor(0.65)) and (step <= self.max_steps):
+            while best_expected_mean > -torch.log(torch.tensor(0.95)) and (step <= self.max_steps):
                 optimizer.zero_grad()
                 tailor_inpt = {'result':opt_gen_result, 'inpt':inpt, 'original':gen_result}
                 tailor_results = []
@@ -235,30 +235,20 @@ def meta_optimizer(main_module, tailor_modules, inpt, d_out, epoch, debug_second
 
     return main_module, tailor_modules, result, debug_dict
 
-def tailor_optimizer(tailor_modules, succ, failed, train):
+def tailor_optimizer(tailor_modules, batch, train):
     debug_dict = {}
-    if len(succ[0].shape) < 3:
-        for ob in succ:
+    if len(batch[0].shape) < 3:
+        for ob in batch:
             ob = ob.unsqueeze(0)
-        for ob in failed:
-            ob = ob.unsqueeze(0)
-    s_trj, s_obs, success, s_ftrj = succ
-    f_trj, f_obs, fail, f_ftrj = failed
-    trajectories = torch.cat((s_trj, f_trj), dim=0)
-    ftrj = torch.cat((s_ftrj, f_ftrj), dim=0)
-    inpt = torch.cat((s_obs, f_obs), dim=0)
-    if len(success.shape) == 0:
-        success = success.reshape(1)
-    if len(fail.shape) == 0:
-        fail = fail.reshape(1)
-    label = torch.cat((success, fail), dim=0)
+    (trajectories, inpt, label) = batch
+    if len(label.shape) == 0:
+        label = label.reshape(1)
     tailor_results = []
     for i, tailor_module in enumerate(tailor_modules):
         tailor_module.meta_optimizer.zero_grad()
         tailor_inpt = {}
         tailor_inpt['result'] = trajectories
         tailor_inpt['inpt'] = inpt
-        tailor_inpt['original'] = ftrj
         tailor_result = tailor_module.forward(tailor_inpt)
         tailor_loss_input = {}
         tailor_loss_input['tailor_result'] = tailor_result

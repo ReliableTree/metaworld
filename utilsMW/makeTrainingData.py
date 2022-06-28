@@ -180,7 +180,7 @@ class SuccessSimulation():
                 label = torch.cat([*label], dim = 0).reshape(-1,a.shape[0])
                 labels.append(label)
                 f_results += [f_result]
-        if len(label) > 0:
+        if len(labels) > 0:
             labels = torch.cat([*labels], dim=0).reshape(-1, labels[0].size(0), labels[0].size(1)).to(policy.device)
             trajectories = torch.cat([*trajectories], dim=0)
             inpt_obs = torch.cat([*inpt_obs], dim=0)
