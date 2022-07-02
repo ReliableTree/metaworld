@@ -13,7 +13,7 @@ def check_outpt(label, outpt, tol_neg, tol_pos, window = 0):
     if window > 0:
         tol_neg, tol_pos, inpt= make_sliding_tol(label=inpt, neg_tol=tol_neg, pos_tol=tol_pos, window=window)
 
-    diff = outpt - label
+    diff = label-outpt
 
     if window > 0:
         neg_acc = diff > tol_neg

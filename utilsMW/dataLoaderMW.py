@@ -8,9 +8,9 @@ class TorchDatasetMW(torch.utils.data.Dataset):
         path_data = path + 'training_data'
         path_label = path + 'training_label'
         path_phase = path + 'training_reward'
-        self.data = torch.load(path_data).to(torch.float32).to(device)[:n]
-        self.label = torch.load(path_label).to(torch.float32).to(device)[:n]
-        self.phase = torch.load(path_phase).to(torch.float32).to(device)[:n]
+        self.data = torch.load(path_data).to(torch.float32).to(device)[-n:]
+        self.label = torch.load(path_label).to(torch.float32).to(device)[-n:]
+        self.phase = torch.load(path_phase).to(torch.float32).to(device)[-n:]
 
         #self.data = torch.cat((self.data, self.phase.unsqueeze(-1)), dim=-1)
 
@@ -19,6 +19,10 @@ class TorchDatasetMW(torch.utils.data.Dataset):
             return len(self.data)
 
     def add_data(self, data, label):
+        print(f'data: {data.shape}')
+        print(f'label: {label.shape}')
+        print(f'self.data: {self.data.shape}')
+        print(f'self.label: {self.label.shape}')
 
         if data.size(1) == 1:
             data = data.repeat([1,self.data.size(1), 1])
@@ -32,10 +36,10 @@ class TorchDatasetMW(torch.utils.data.Dataset):
 
 class TorchDatasetMWToy(torch.utils.data.Dataset):
   def __init__(self, path, device = 'cpu'):
-    path_data = path + 'inpt'
-    path_label = path + 'label'
-    self.data = torch.load(path_data).to(torch.float32).to(device)
-    self.label = torch.load(path_label).to(torch.float32).to(device)
+      path_data = path + 'inpt'
+      path_label = path + 'label'
+      self.data = torch.load(path_data).to(torch.float32).to(device)
+      self.label = torch.load(path_label).to(torch.float32).to(device)
       
 
   def __len__(self):
@@ -47,28 +51,28 @@ class TorchDatasetMWToy(torch.utils.data.Dataset):
         return self.data[index], self.label[index]
 
 class TorchDatasetTailor(torch.utils.data.Dataset):
-    def __init__(self, trajectories, obsv, success) -> None:
+    def __init__(self, trajectories, obsv, success, ftrj) -> None:
         super().__init__()
+        self.s_trajectories = trajectories[success==1]
+        self.s_ftrj = ftrj[success==1]
+        self.s_obsv = obsv[success==1]
+        self.success = success[success==1]
 
-        self.trajectories = trajectories
-        self.obsv = obsv
-        self.success = success
+        self.f_trajectories = trajectories[success==0]
+        self.f_ftrj = ftrj[success==0]
+        self.f_obsv = obsv[success==0]
+        self.fail = success[success==0]
 
-    def add_data(self, trajectories, obsv, success):
-
-        self.trajectories = torch.cat((self.trajectories, trajectories), dim=0)
-        self.obsv = torch.cat((self.obsv, obsv), dim=0)
-        self.success = torch.cat((self.success, success), dim=0)
-        
+        self.s_len = len(self.success)
+        self.f_len = len(self.fail)
+        self.len = max(self.s_len, self.f_len)
 
     def __len__(self):
-        return len(self.success)
-
-    def num_ele(self):
-        return len(self.success)
+        return self.len
 
     def __getitem__(self, index):
-        return (self.trajectories[index], self.obsv[index], self.success[index])
+        return (self.s_trajectories[index%self.s_len], self.s_obsv[index%self.s_len], self.success[index%self.s_len], self.s_ftrj[index%self.s_len]),\
+             (self.f_trajectories[index%self.f_len], self.f_obsv[index%self.f_len], self.fail[index%self.f_len], self.f_ftrj[index%self.f_len])
 
 if __name__ == '__main__':
     ptd = '/home/hendrik/Documents/master_project/LokalData/metaworld/pick-place/training_data/'
