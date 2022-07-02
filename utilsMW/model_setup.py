@@ -33,17 +33,17 @@ model_setup = {
     'tailor_transformer': {
                 'use_layernorm':False,
                 'upconv' : False,
-                'num_upconvs':4,
+                'num_convs':4,
                 'stride':3,
-                'd_output':5,
-                'd_model' : 400,
-                'nhead':4,
-                'd_hid':400,
+                'd_output':1,
+                'd_model' : 200,
+                'nhead':10,
+                'd_hid':200,
                 'nlayers':4,
-                'd_result':2,
+                'd_result':1,
                 'seq_len': 200,
 
     },
     'quick_val':False,
-    'val_every' : 30
+    'val_every' : 600
 }
