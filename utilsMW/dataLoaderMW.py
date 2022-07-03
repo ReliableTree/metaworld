@@ -4,14 +4,15 @@ from torch.utils.data import DataLoader
 
 class TorchDatasetMW(torch.utils.data.Dataset):
     'Characterizes a dataset for PyTorch'
-    def __init__(self, path, device = 'cpu', n=1):
+    def __init__(self, path, device = 'cpu', n=1, horizon = 30):
         path_data = path + 'training_data'
         path_label = path + 'training_label'
         path_phase = path + 'training_reward'
         self.data = torch.load(path_data).to(torch.float32).to(device)[-n:]
         self.label = torch.load(path_label).to(torch.float32).to(device)[-n:]
         self.phase = torch.load(path_phase).to(torch.float32).to(device)[-n:]
-
+        self.horizon = horizon
+        self.n = n
         #self.data = torch.cat((self.data, self.phase.unsqueeze(-1)), dim=-1)
 
     def __len__(self):
@@ -29,7 +30,14 @@ class TorchDatasetMW(torch.utils.data.Dataset):
 
         self.data = torch.cat((self.data, data), dim=0)
         self.label = torch.cat((self.label, label), dim=0)
-
+        if len(self.data) > self.horizon:
+            mask = torch.zeros(len(self.data))
+            mask[:self.n] = 1
+            num_new_ele = self.horizon - self.n
+            mask[-num_new_ele:] = 1
+            print(f'num ele dataset: {mask}')
+            self.data = self.data[mask]
+            self.label = self.label[mask]
     def __getitem__(self, index):
             'Generates one sample of data'
             return self.data[index], self.label[index]

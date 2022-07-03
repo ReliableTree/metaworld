@@ -1,6 +1,8 @@
 import imp
 from sys import path
 from time import sleep
+
+from cv2 import VideoWriter
 import metaworld
 import random
 #from metaworld.policies.sawyer_pick_place_v2_policy import SawyerPickPlaceV2Policy
@@ -13,6 +15,7 @@ import numpy as np
 import os
 import numpy as np
 from torch.utils.data import DataLoader
+from gym.wrappers import RecordVideo
 
 from metaworld.envs import (ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE,
                             ALL_V2_ENVIRONMENTS_GOAL_HIDDEN)
@@ -132,11 +135,13 @@ class SuccessSimulation():
         self.window=0
 
 
-    def get_env(self, n, env_tag):
+    def get_env(self, n, env_tag, name):
         envs = []
         env_name = self.policy_dict[env_tag][1]
         gt_policy = self.policy_dict[env_tag][0]
         for i in range(n):
+            def st(i):
+                return True
             env = ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE[env_name]()
             envs.append([env, gt_policy])
         return envs
@@ -150,6 +155,8 @@ class SuccessSimulation():
         for env_tuple in envs:
             env, gt_policy = env_tuple
             obs = env.reset()  # Reset environment
+            def asd(i):
+                return True
             obs_dict = gt_policy._parse_obs(obs)
             obs_arr = np.concatenate((obs_dict['hand_pos'], obs_dict['puck_pos'], obs_dict['puck_rot'], obs_dict['goal_pos']), axis=0)
             obs_arr = torch.tensor(obs_arr, dtype = torch.float, device = policy.device).reshape(1,1,-1)
@@ -161,7 +168,6 @@ class SuccessSimulation():
             for a in np_result[0]:
                 obs, reward_policy, done, info = env.step(a)  # Step the environoment with the sampled random action
                 #env.render()
-
             obs = env.reset()  # Reset environment
             steps = 0
             label = []
