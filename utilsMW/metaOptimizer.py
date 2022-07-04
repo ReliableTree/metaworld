@@ -96,14 +96,14 @@ class MetaModule():
         if self.return_mode == 0:
             return {'gen_trj': gen_result, 'inpt_trj' : gen_result}
         elif self.return_mode == 1:
-            opt_inpt = torch.clone(inpt.detach())
-            opt_inpt.requires_grad_(True)
+            #opt_inpt = torch.clone(inpt.detach())
+            #opt_inpt.requires_grad_(True)
             opt_gen_result = torch.clone(gen_result.detach())
-            #opt_gen_result.requires_grad_(True)
+            opt_gen_result.requires_grad_(True)
             #optimizer =  torch.optim.Adam(self.main_signal.model.parameters(), lr=self.lr)
             #optimizer = torch.optim.SGD(self.main_signal.model.parameters(), lr=self.lr)
-            #optimizer = torch.optim.SGD([opt_gen_result], lr=self.lr)
-            optimizer = torch.optim.Adam([opt_inpt], lr=self.lr)
+            optimizer = torch.optim.SGD([opt_gen_result], lr=self.lr)
+            #optimizer = torch.optim.Adam([opt_inpt], lr=self.lr)
             #optimizer = torch.optim.AdamW(self.main_signal.model.parameters(), lr=self.lr)
 
             best_expected_success = None
@@ -119,7 +119,7 @@ class MetaModule():
                 self.max_steps *= 1.05'''
             while best_expected_mean > -torch.log(torch.tensor(0.95)) and (step <= self.max_steps):
                 optimizer.zero_grad()
-                opt_gen_result = self.main_signal.forward(opt_inpt)['gen_trj']
+                #opt_gen_result = self.main_signal.forward(opt_inpt)['gen_trj']
                 tailor_inpt = {'result':opt_gen_result, 'inpt':inpt, 'original':gen_result}
                 tailor_results = []
                 for ts in self.tailor_signals:

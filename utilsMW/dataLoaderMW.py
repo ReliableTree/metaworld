@@ -31,7 +31,7 @@ class TorchDatasetMW(torch.utils.data.Dataset):
         self.data = torch.cat((self.data, data), dim=0)
         self.label = torch.cat((self.label, label), dim=0)
         if len(self.data) > self.horizon:
-            mask = torch.zeros(len(self.data))
+            mask = torch.zeros(len(self.data), dtype=torch.bool)
             mask[:self.n] = 1
             num_new_ele = self.horizon - self.n
             mask[-num_new_ele:] = 1

@@ -43,8 +43,8 @@ WEIGHT_PHS      = 1 #1.0
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 
-META_LEARNING_RATE = 1e-5
-LR_META_OPTIMIZED = 1e-3
+META_LEARNING_RATE = 5e-5
+LR_META_OPTIMIZED = 1e-2
 
 
 def count_parameters(model):
