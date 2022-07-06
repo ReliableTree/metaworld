@@ -83,7 +83,7 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
 
     network.setup_model(model_params=model_setup)
     if model_path is not None:
-        network.load_state_dict(torch.load(model_path + 'policy_network', map_location='cuda:0'), strict=False)
+        network.loadNetworkFromFile(path=model_path)
     count_parameters(network)
     print('in tailor transfo:')
     count_parameters(tailor_models[0])
@@ -142,8 +142,11 @@ if __name__ == '__main__':
         if '-train_size' in args:
             train_size = float(args[args.index('-train_size') + 1])
 
+
         hid             = hashids.Hashids()
         logname         = hid.encode(int(time.time() * 1000000))
+        if '-logname' in args:
+            logname = args[args.index('-logname') + 1]
         print(f'logname: {logname}')
         network = setupModel(device=device, epochs = epochs, batch_size = batch_size, path_dict = path_dict, logname=logname, model_path=model_path, tboard=tboard, model_setup=model_setup, train_size=train_size)
         print(f'end saving: {path_dict["MODEL_PATH"]}')

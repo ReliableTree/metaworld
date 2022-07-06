@@ -18,17 +18,22 @@ class TorchDatasetMW(torch.utils.data.Dataset):
             'Denotes the total number of samples'
             return len(self.data)
 
-    def add_data(self, data, label):
-        print(f'data: {data.shape}')
-        print(f'label: {label.shape}')
-        print(f'self.data: {self.data.shape}')
-        print(f'self.label: {self.label.shape}')
+    def set_data(self, data, label):
+        if data.size(1) == 1:
+            data = data.repeat([1,self.data.size(1), 1])
+        self.data = data
+        self.label = label
+        print(f'train self.data: {self.data.shape}')
+        print(f'train self.label: {self.label.shape}')
 
+    def add_data(self, data, label):
         if data.size(1) == 1:
             data = data.repeat([1,self.data.size(1), 1])
 
         self.data = torch.cat((self.data, data), dim=0)
         self.label = torch.cat((self.label, label), dim=0)
+        print(f'train self.data: {self.data.shape}')
+        print(f'train self.label: {self.label.shape}')
 
     def __getitem__(self, index):
             'Generates one sample of data'
