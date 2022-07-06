@@ -72,9 +72,6 @@ class MakeTrainingData():
                             obs_arr[pointer:pointer+len_data] = obs_dict[key]
                             pointer += len_data
 
-                    #self.make_np_array(name='obs_memory', data=obs_arr)
-                    #self.make_np_array(name='actions', data=a)
-                    #self.make_np_array(name='reward', data = reward/10)
                 print(f'reward:{reward}')
             #if i > max_len:
             #    max_len = i
@@ -160,7 +157,10 @@ class SuccessSimulation():
 
             for a in np_result[0]:
                 obs, reward_policy, done, info = env.step(a)  # Step the environoment with the sampled random action
-                #env.render()
+                obs_dict = gt_policy._parse_obs(obs)
+                obs_arr = np.concatenate((obs_dict['hand_pos'], obs_dict['puck_pos'], obs_dict['puck_rot'], obs_dict['goal_pos']), axis=0)
+                current_obs_arr = torch.tensor(obs_arr, dtype = torch.float, device = policy.device).reshape(1,1,-1)
+                obs_arr = torch.cat((obs_arr, current_obs_arr), dim = 1)
 
             obs = env.reset()  # Reset environment
             steps = 0
