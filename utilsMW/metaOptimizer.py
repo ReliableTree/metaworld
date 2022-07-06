@@ -50,8 +50,9 @@ class TaylorSignalModule(SignalModule):
     def forward(self, inpt):
         trajectories = inpt['result']
         original_trajectories = inpt['original']
-        inpt_obs = inpt['inpt'][:,:1]
-        inpt_obs = inpt_obs.repeat((1, trajectories.size(1), 1))
+        inpt_obs = inpt['inpt']
+        print(f'in tailor module inpt_obsv expected batch,len,dim: {inpt_obs.shape}')
+        print(f'in tailor module inpt_obsv expected 0s and diff: {inpt_obs[0,:10]}')
         #inpt_super = torch.concat((trajectories, original_trajectories, inpt_obs), dim = -1)
         inpt_super = torch.concat((trajectories, inpt_obs), dim = -1)
         result =  super().forward(inpt_super)

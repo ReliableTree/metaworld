@@ -150,6 +150,11 @@ class SuccessSimulation():
             obs_dict = gt_policy._parse_obs(obs)
             obs_arr = np.concatenate((obs_dict['hand_pos'], obs_dict['puck_pos'], obs_dict['puck_rot'], obs_dict['goal_pos']), axis=0)
             obs_arr = torch.tensor(obs_arr, dtype = torch.float, device = policy.device).reshape(1,1,-1)
+            seq_len = policy.main_signal.model.model_setup['seq_len']
+            obs_arr = obs_arr.repeat((1,seq_len,1))
+            obs_arr[:,1:] = 0
+            print(f'in get success expected batch,len,dim: {obs_arr.shape}')
+            print(f'in get success expected 0s from 1: {obs_arr[0,:10]}')
             result_pol = policy.forward(obs_arr)
             result = result_pol['gen_trj'].detach()
             f_result = result_pol['inpt_trj'].detach()
