@@ -66,7 +66,7 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
 
     #tailor_models = [tailor_model]
     tailor_models=[TailorTransformer(model_setup=model_setup['tailor_transformer']) for i in range(1)]
-    data = TorchDatasetMW(path=path_dict['META_WORLD'], device=device, n=10)
+    data = TorchDatasetMW(path=path_dict['META_WORLD'], device=device, n=50)
 
     #train_indices = torch.arange(10)+20
     #train_data = torch.utils.data.Subset(data, train_indices)
