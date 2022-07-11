@@ -11,18 +11,19 @@ def make_toy_data(num_examples, inpt_func, outpt_func):
 
 def check_outpt(label, outpt, tol_neg, tol_pos, window = 0):
     if window > 0:
-        tol_neg, tol_pos, inpt= make_sliding_tol(label=inpt, neg_tol=tol_neg, pos_tol=tol_pos, window=window)
+        pos_inpt, neg_inpt, inpt = make_sliding_tol(label=label, neg_tol=tol_neg, pos_tol=tol_pos, window=window)
+        outpt = outpt[:,int(window/2):-(int(window/2) + 1)]
+        neg_acc = outpt > neg_inpt
+        pos_acc = outpt < pos_inpt
 
-    diff = label-outpt
-
-    if window > 0:
-        neg_acc = diff > tol_neg
-        pos_acc = diff < tol_pos
     else:
+        diff = label-outpt
         neg_acc = diff > tol_neg[None,None,:]
         pos_acc = diff < tol_pos[None,None,:]
-    acc = neg_acc*pos_acc
-    acc = acc.reshape(diff.size(0), -1)
+
+        
+    acc = (neg_acc * pos_acc)
+    acc = acc.reshape(label.size(0), -1)
     return torch.all(acc, dim=1)
 
 def make_tol(std_dev, dim, add=1e-3, device = 'cpu'):
@@ -98,7 +99,6 @@ def make_toy_data(fct, n, dim_in, std = 0.1, data_path= None):
     tl = tl.reshape([tl.size(0),-1])
     tmax = tl[:10].max(dim=1)[0]
     tmin = tl[:10].min(dim=1)[0]
-    rel_corr = tmax - tmin
     label = label % 1
 
     data_sets = ['train', 'val', 'test']
@@ -151,7 +151,7 @@ if __name__ == '__main__':
         
         dim_in = 4
         dim_out = 4
-        seq_len = 200
+        seq_len = 50
         n = 30000
         if '-dim_in' in args:
             dim_in = int(args[args.index('-dim_in') + 1])
