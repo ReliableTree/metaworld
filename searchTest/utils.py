@@ -1,16 +1,20 @@
 # @author Simon Stepputtis <sstepput@asu.edu>, Interactive Robotics Lab, Arizona State University
 #matplotlib.use("TkAgg")
+from select import select
 import matplotlib.pyplot as plt
 import tensorflow as tf
 import numpy as np
 from hashids import Hashids
 import os
 import torch
-from imitation.data import rollout
-from imitation.data.wrappers import RolloutInfoWrapper
+try:
+    from imitation.data import rollout
+    from imitation.data.wrappers import RolloutInfoWrapper
+except:
+    pass
 from stable_baselines3.common.vec_env import DummyVecEnv
 import gym
-from searchTest.toyEnvironment import check_outpt
+from MetaWorld.searchTest.toyEnvironment import check_outpt
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
 from typing import Any, Dict, Optional, Type, Union
 from stable_baselines3.common.policies import ActorCriticCnnPolicy, ActorCriticPolicy, BasePolicy
@@ -21,8 +25,11 @@ parent_path = str(Path(__file__).parent.absolute())
 parent_path += '/../../'
 sys.path.append(parent_path)
 from LanguagePolicies.utils.graphsTorch import TBoardGraphsTorch
+from gym.wrappers import TimeLimit
 global SAMPLED_ENVS
 SAMPLED_ENVS = 0
+global NUM_RESETS
+
 
 def simulate(policy, n, val_env):
     rew = []
@@ -36,51 +43,6 @@ def simulate(policy, n, val_env):
         rew.append(reward)
     reward = torch.tensor(rew).type(torch.float).mean()
     return reward
-
-def print_reward(policy, step_id, val_env, logname = 'ppo_hard'):
-    tboard = TBoardGraphsTorch(logname=logname, data_path='/home/hendrik/Documents/master_project/LokalData/stableBaselines/')
-    reward = simulate(policy=policy, n=1000, val_env=val_env)
-    print(reward)
-    tboard.addValidationScalar('success rate', reward.detach(), stepid=step_id)
-    target_trj = val_env.label[val_env.current_env]
-    gen_trj = val_env.traj
-    inpt = val_env.data[val_env.current_env][0]
-
-    tol_neg = -0.05*torch.ones([val_env.traj.size(-1)])
-    tol_pos = 0.15*torch.ones([val_env.traj.size(-1)])
-    tboard.plotDMPTrajectory(target_trj, gen_trj, torch.zeros_like(gen_trj),
-                                None, None, None, stepid=step_id, save=False, name_plot='ppo fine tuning baseline', path='',\
-                                    tol_neg=tol_neg, tol_pos=tol_pos, inpt = inpt, name='ppo fine tuning baseline', opt_gen_trj = None, window=3)
-
-
-def train_bc(val_env, logname, bc_trainer):
-    best_success = 0
-    tboard = TBoardGraphsTorch(logname=logname, data_path='/home/hendrik/Documents/master_project/LokalData/stableBaselines/')
-    for i in range(100):
-        rew = []
-        for j in range(1000):
-            obs = val_env.reset()
-            done = False
-            while not done:
-                action, _ = bc_trainer.policy.predict(obs)
-                obs, reward, done, _ = val_env.step(action=action)
-            rew.append(reward)
-        reward = torch.tensor(rew).type(torch.float).mean()
-        print(reward)
-        if reward > best_success: 
-            best_success = reward
-            torch.save(bc_trainer.policy.state_dict(), "/home/hendrik/Documents/master_project/LokalData/test/bc_hard_100"+str(reward))
-        tboard.addValidationScalar('success rate', reward.detach(), stepid=i)
-        target_trj = val_env.label[val_env.current_env]
-        gen_trj = val_env.traj
-        inpt = val_env.data[val_env.current_env][0]
-
-        tol_neg = -0.05*torch.ones([val_env.traj.size(-1)])
-        tol_pos = 0.15*torch.ones([val_env.traj.size(-1)])
-        tboard.plotDMPTrajectory(target_trj, gen_trj, torch.zeros_like(gen_trj),
-                                    None, None, None, stepid=i, save=False, name_plot='imitation baseline', path='',\
-                                        tol_neg=tol_neg, tol_pos=tol_pos, inpt = inpt, name='imitation baseline', opt_gen_trj = None, window=None)
-        bc_trainer.train(n_epochs=500, log_interval=100000000)
 
 from prettytable import PrettyTable
 def count_parameters(model):
@@ -298,25 +260,7 @@ class ToyExpertModel(OnPolicyAlgorithm):
 
         return result, result
 
-def benchmark_policy(policy, path, logname, eval_epochs, val_env, stepid, best_reward, save_model = True):
-    tboard = TBoardGraphsTorch(logname=logname, data_path=path)
-    rew = []
-    for j in range(eval_epochs):
-        obs = val_env.reset(train=True)
-        done = False
-        while not done:
-            action, _ = policy.predict(obs)
-            obs, reward, done, _ = val_env.step(action=action)
-        rew.append(reward)
-    reward = torch.tensor(rew).type(torch.float).mean()
-    if reward >= best_reward and save_model:
-        best_reward = reward
-        save_path = path + logname
-        if not os.path.exists(save_path):
-            os.makedirs(save_path)
-
-        torch.save(policy.state_dict(), save_path + '/best_model')
-    tboard.addValidationScalar('success rate', reward.detach(), stepid=stepid)
+def draw_gt(val_env, tboard, stepid):
     target_trj = val_env.label[val_env.current_env]
     gen_trj = val_env.traj
     inpt = val_env.data[val_env.current_env][0]
@@ -328,11 +272,159 @@ def benchmark_policy(policy, path, logname, eval_epochs, val_env, stepid, best_r
     tboard.plotDMPTrajectory(target_trj, gen_trj, torch.zeros_like(gen_trj),
                                 None, None, None, stepid=stepid, save=False, name_plot='imitation baseline', path='',\
                                     tol_neg=tol_neg, tol_pos=tol_pos, inpt = inpt, name='imitation baseline', opt_gen_trj = None, window=window)
+
+
+def benchmark_policy(policy, path, logname, eval_epochs, val_env, stepid, best_reward, save_model = True, do_draw_gt = False):
+    tboard = TBoardGraphsTorch(logname=logname, data_path=path)
+    rew = []
+    success = []
+    for j in range(eval_epochs):
+        trj = []
+        obs = val_env.reset()
+        done = False
+        k = 0
+        while not done:
+            k+=1
+            action, _ = policy.predict(obs)
+            obs, reward, done, info = val_env.step(action)
+            if j == eval_epochs - 1:
+                trj.append(action)
+        rew.append(reward)
+    reward = torch.tensor(rew).type(torch.float).mean()
+    success = torch.tensor(success).type(torch.float).mean()
+    trj = torch.tensor(np.array(trj))
+    if len(trj.shape) == 1:
+        trj = trj.reshape(-1,1)
+    if reward >= best_reward and save_model:
+        best_reward = reward
+        save_path = path + logname
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
+
+        torch.save(policy.state_dict(), save_path + '/best_model' + str(reward))
+    #tboard.addValidationScalar('success rate', success.detach(), stepid=stepid)
+    tboard.addValidationScalar('reward', reward.detach(), stepid=stepid)
+    if do_draw_gt:
+        draw_gt(val_env=val_env, tboard=tboard, stepid=stepid)
+    else:
+        trj = trj.transpose(0,1)
+        print(trj.shape)
+        tboard.plotDMPTrajectory(trj[0], trj[0], torch.zeros_like(trj[0]),
+                            None, None, None, stepid=stepid, save=False, name_plot='logname')
     return best_reward
 
-def train_policy(trainer, learn_fct, val_env, logname, path, n_epochs, n_steps, eval_epochs = 100):
-    global SAMPLED_ENVS
-    best_reward = 0
+def train_policy(trainer, learn_fct, val_env, logname, path, n_epochs, n_steps, eval_epochs = 100, step_fct = None):
+    if step_fct is None:
+        global SAMPLED_ENVS
+        step_id = SAMPLED_ENVS
+    else:
+        step_id = 0
+    best_reward = -10
     for i in range(n_epochs):
-        best_reward = benchmark_policy(policy = trainer.policy, path=path, logname=logname, eval_epochs=eval_epochs, val_env=val_env, stepid=SAMPLED_ENVS, best_reward=best_reward)
+        if step_fct is not None:
+            step_id = step_fct(step_id)
+        best_reward = benchmark_policy(policy = trainer.policy, path=path, logname=logname, eval_epochs=eval_epochs, val_env=val_env, stepid=step_id, best_reward=best_reward)
         learn_fct(n_epochs=n_steps)
+
+class LearnWrapper():
+    def __init__(self, trainer):
+        self.trainer = trainer
+    
+    def train(self, n_epochs):
+        self.trainer.learn(total_timesteps=n_epochs, log_interval=140000)
+
+NUM_RESETS = 0
+class SuperMyGymWrapper():
+    def __init__(self, tag, bo=None) -> None:
+        self.tag = tag
+        self.bo=bo
+
+    def make_wrapper(self, count_resets = True):
+
+        if self.bo is None:
+            bo = gym.make(self.tag)
+        else:
+            bo = self.bo
+
+        class MyGymWrapper(bo.__class__):
+            def __init__(self, baseObject, count_resets):
+                self.__class__ = type(baseObject.__class__.__name__,
+                                    (self.__class__, baseObject.__class__),
+                                    {})
+                self.__dict__ = baseObject.__dict__
+                self.count_resets = count_resets
+
+            def reset_count(self):
+                global NUM_RESETS
+                NUM_RESETS = 0
+
+            def reset(self):
+                global NUM_RESETS
+                if self.count_resets:
+                    NUM_RESETS += 1
+                    print(f'num_ sampled: {NUM_RESETS}')
+                return super().reset()
+
+            def step(self, action):
+                obsv, rew, done, info = super().step(action)
+                return obsv, rew, done, info
+
+            
+        mgw = MyGymWrapper(baseObject=bo, count_resets=count_resets)
+        return mgw     
+
+class supermipWrapper():
+    def __init__(self, tag, bo=None) -> None:
+        self.tag = tag
+        self.bo=bo
+
+    def make_wrapper(self, count_resets = True):
+
+        if self.bo is None:
+            bo = gym.make(self.tag)
+        else:
+            bo = self.bo
+
+        class MyGymWrapper(bo.__class__):
+            def __init__(self, baseObject, count_resets):
+                self.__class__ = type(baseObject.__class__.__name__,
+                                    (self.__class__, baseObject.__class__),
+                                    {})
+                self.__dict__ = baseObject.__dict__
+                self.count_resets = count_resets
+
+            def reset_count(self):
+                global NUM_RESETS
+                NUM_RESETS = 0
+
+            def reset(self):
+                global NUM_RESETS
+                if self.count_resets:
+                    NUM_RESETS += 1
+                    print(f'num_ sampled: {NUM_RESETS}')
+                return super().reset()
+
+            def _rebuild_obsv(self, obsv, info):
+                obsvs = []
+                for i in range(len(info)):
+                    obsv_dict = {}
+                    for key in obsv:
+                        obsv_dict[key] = obsv[key][i]
+                    obsvs.append(obsv_dict)
+                return obsvs
+
+
+            def step(self, action):
+                obsv, rew, done, info = super().step(action)
+                obsv = self._rebuild_obsv(obsv=obsv, info=info)
+                return obsv, rew, done, info
+
+        mgw = MyGymWrapper(baseObject=bo, count_resets=count_resets)
+        return mgw       
+
+class my_dummy_wrapper:
+    def __init__(self, tag) -> None:
+        self.tag = tag
+
+    def get_env(self):
+        return gym.make(self.tag)
