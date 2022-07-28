@@ -335,7 +335,7 @@ class LearnWrapper():
 
 NUM_RESETS = 0
 class SuperMyGymWrapper():
-    def __init__(self, tag, bo=None) -> None:
+    def __init__(self, tag=None, bo=None) -> None:
         self.tag = tag
         self.bo=bo
 
@@ -368,6 +368,10 @@ class SuperMyGymWrapper():
             def step(self, action):
                 obsv, rew, done, info = super().step(action)
                 return obsv, rew, done, info
+
+            def get_count(self):
+                global NUM_RESETS
+                return NUM_RESETS
 
             
         mgw = MyGymWrapper(baseObject=bo, count_resets=count_resets)
