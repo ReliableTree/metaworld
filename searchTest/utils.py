@@ -1,5 +1,7 @@
 # @author Simon Stepputtis <sstepput@asu.edu>, Interactive Robotics Lab, Arizona State University
 #matplotlib.use("TkAgg")
+from cmath import inf
+from mimetypes import init
 from select import select
 import matplotlib.pyplot as plt
 import tensorflow as tf
@@ -16,16 +18,19 @@ from stable_baselines3.common.vec_env import DummyVecEnv
 import gym
 from MetaWorld.searchTest.toyEnvironment import check_outpt
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
-from typing import Any, Dict, Optional, Type, Union
-from stable_baselines3.common.policies import ActorCriticCnnPolicy, ActorCriticPolicy, BasePolicy
+from typing import Any, Dict, Optional, Tuple, Type, Union
+from stable_baselines3.common.policies import ActorCriticPolicy, BasePolicy
 from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback
+from stable_baselines3.common.torch_layers import CombinedExtractor
 import sys
 from pathlib import Path
 parent_path = str(Path(__file__).parent.absolute())
 parent_path += '/../../'
 sys.path.append(parent_path)
 from LanguagePolicies.utils.graphsTorch import TBoardGraphsTorch
-from gym.wrappers import TimeLimit
+from sb3_contrib.tqc.policies import MultiInputPolicy
+
+
 global SAMPLED_ENVS
 SAMPLED_ENVS = 0
 global NUM_RESETS
@@ -274,25 +279,25 @@ def draw_gt(val_env, tboard, stepid):
                                     tol_neg=tol_neg, tol_pos=tol_pos, inpt = inpt, name='imitation baseline', opt_gen_trj = None, window=window)
 
 
-def benchmark_policy(policy, path, logname, eval_epochs, val_env, stepid, best_reward, save_model = True, do_draw_gt = False):
+def benchmark_policy(
+    policy, 
+    path, 
+    logname, 
+    eval_epochs, 
+    val_env, 
+    stepid, 
+    best_reward, 
+    new_epoch, 
+    extractor,
+    save_model = True, 
+    do_draw_gt = False,
+    ):
     tboard = TBoardGraphsTorch(logname=logname, data_path=path)
-    rew = []
-    success = []
-    for j in range(eval_epochs):
-        trj = []
-        obs = val_env.reset()
-        done = False
-        k = 0
-        while not done:
-            k+=1
-            action, _ = policy.predict(obs)
-            obs, reward, done, info = val_env.step(action)
-            if j == eval_epochs - 1:
-                trj.append(action)
-        rew.append(reward)
-    reward = torch.tensor(rew).type(torch.float).mean()
-    success = torch.tensor(success).type(torch.float).mean()
-    trj = torch.tensor(np.array(trj))
+    transitions = sample_expert_transitions(policy, val_env, eval_epochs)
+    trj, observations, rewards   = parse_sampled_transitions(transitions=transitions, new_epoch=new_epoch, extractor=extractor)
+    reward = rewards.type(torch.float).mean()
+    print(f'in trainer reward: {reward}')
+
     if len(trj.shape) == 1:
         trj = trj.reshape(-1,1)
     if reward >= best_reward and save_model:
@@ -302,18 +307,19 @@ def benchmark_policy(policy, path, logname, eval_epochs, val_env, stepid, best_r
             os.makedirs(save_path)
 
         torch.save(policy.state_dict(), save_path + '/best_model' + str(reward))
-    #tboard.addValidationScalar('success rate', success.detach(), stepid=stepid)
     tboard.addValidationScalar('reward', reward.detach(), stepid=stepid)
     if do_draw_gt:
         draw_gt(val_env=val_env, tboard=tboard, stepid=stepid)
     else:
-        trj = trj.transpose(0,1)
+        #trj = trj.transpose(0,1)
+        if len(trj.shape) == 2:
+            trj = trj.unsqueeze(0)
         print(trj.shape)
         tboard.plotDMPTrajectory(trj[0], trj[0], torch.zeros_like(trj[0]),
                             None, None, None, stepid=stepid, save=False, name_plot='logname')
-    return best_reward
+    return reward
 
-def train_policy(trainer, learn_fct, val_env, logname, path, n_epochs, n_steps, eval_epochs = 100, step_fct = None):
+def train_policy(trainer, learn_fct, val_env, logname, path, n_epochs, n_steps, new_epoch, extractor, eval_epochs = 100, step_fct = None):
     if step_fct is None:
         global SAMPLED_ENVS
         step_id = SAMPLED_ENVS
@@ -323,7 +329,16 @@ def train_policy(trainer, learn_fct, val_env, logname, path, n_epochs, n_steps, 
     for i in range(n_epochs):
         if step_fct is not None:
             step_id = step_fct(step_id)
-        best_reward = benchmark_policy(policy = trainer.policy, path=path, logname=logname, eval_epochs=eval_epochs, val_env=val_env, stepid=step_id, best_reward=best_reward)
+        best_reward = benchmark_policy(
+            policy = trainer.policy, 
+            path=path, 
+            logname=logname, 
+            eval_epochs=eval_epochs, 
+            val_env=val_env, 
+            stepid=step_id, 
+            best_reward=best_reward,
+            new_epoch=new_epoch,
+            extractor=extractor)
         learn_fct(n_epochs=n_steps)
 
 class LearnWrapper():
@@ -432,3 +447,78 @@ class my_dummy_wrapper:
 
     def get_env(self):
         return gym.make(self.tag)
+
+class VecExtractor:
+    def __init__(self, feature_extractor, env) -> None:
+        self.dummy_model = MultiInputPolicy(observation_space=env.observation_space, action_space=env.action_space, features_extractor_class=feature_extractor, lr_schedule=lambda a:1)
+        self.extractor = feature_extractor(env.observation_space)
+        
+    def forward(self, features):
+        if type(features) is tuple:
+            features = features[0]
+        current_obs, _ = self.dummy_model.obs_to_tensor(features)
+        current_obs = self.extractor(current_obs)  
+        return current_obs.type(torch.float)
+
+def parse_sampled_transitions(transitions, new_epoch, extractor):
+    observations = []
+    actions = []
+    rewards = []
+    epch_actions = []
+    epch_observations = []
+    check_obsvs = extractor.forward(transitions[0]['obs'])
+    for i in range(len(transitions)):
+        current_obs = extractor.forward(features=transitions[i]['obs'])
+
+        if new_epoch(current_obs, check_obsvs):
+            rewards.append(success)
+            check_obsvs = current_obs
+            observations.append(torch.cat([*epch_observations], dim=0).unsqueeze(0))
+            actions.append(epch_actions)
+            
+            rewards.append(success)
+            epch_actions = []
+            epch_observations = []
+        
+        infos = transitions[i]['infos']
+        if 'is_success' in infos:
+            success = transitions[i]['infos']['is_success']
+        elif 'success' in infos:
+            success = transitions[i]['infos']['success']
+
+        epch_actions.append(transitions[i]['acts'])
+        epch_observations.append(current_obs.unsqueeze(0))
+        
+    observations.append(torch.cat([*epch_observations], dim=0).unsqueeze(0))
+    actions.append(epch_actions)
+
+
+    actions = torch.tensor(np.array(actions))
+    observations = torch.cat([*observations], dim=0)
+    rewards = torch.tensor(np.array(rewards))
+    return actions, observations, rewards
+
+def sample_expert_transitions(policy, env, episodes):
+    expert = policy
+
+    print("Sampling expert transitions.")
+    rollouts = rollout.rollout(
+        expert,
+        env,
+        rollout.make_sample_until(min_timesteps=None, min_episodes=episodes),
+        unwrap=True,
+        exclude_infos=False
+    )
+    return rollout.flatten_trajectories(rollouts)   
+
+def count_parameters(model):
+    table = PrettyTable(["Modules", "Parameters"])
+    total_params = 0
+    for name, parameter in model.named_parameters():
+        if not parameter.requires_grad: continue
+        param = parameter.numel()
+        table.add_row([name, param])
+        total_params+=param
+    print(table)
+    print(f"Total Trainable Params: {total_params}")
+    return total_params

@@ -1,8 +1,17 @@
 
 from __future__ import absolute_import, division, print_function, unicode_literals
+import tensorflow as tf
+try:
+    # Disable all GPUS
+    tf.config.set_visible_devices([], 'GPU')
+    visible_devices = tf.config.get_visible_devices()
+    for device in visible_devices:
+        assert device.device_type != 'GPU'
+except:
+    # Invalid device or cannot modify virtual devices once initialized.
+    print('dum')
 import sys
 from pathlib import Path
-from tests.metaworld.envs.mujoco.sawyer_xyz import utils
 parent_path = str(Path(__file__).parent.absolute())
 parent_path += '/../'
 sys.path.append(parent_path)
@@ -66,7 +75,7 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
 
     #tailor_models = [tailor_model]
     tailor_models=[TailorTransformer(model_setup=model_setup['tailor_transformer']) for i in range(1)]
-    data = TorchDatasetMW(path=path_dict['META_WORLD'], device=device, n=50)
+    data = TorchDatasetMW(path=path_dict['META_WORLD'], device=device, n=100)
 
     #train_indices = torch.arange(10)+20
     #train_data = torch.utils.data.Subset(data, train_indices)

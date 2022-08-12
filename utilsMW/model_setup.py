@@ -26,7 +26,7 @@ model_setup = {
             'd_hid':200,
             'd_model' : 200,
             'nlayers':6,
-            'seq_len': 200,
+            'seq_len': 50,
             'dilation' : 2
         },
     },
@@ -41,7 +41,7 @@ model_setup = {
                 'd_hid':60,
                 'nlayers':4,
                 'd_result':2,
-                'seq_len': 200,
+                'seq_len': 50,
 
     },
     'quick_val':False,

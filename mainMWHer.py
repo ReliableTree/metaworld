@@ -89,8 +89,8 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
     network.train(epochs=epochs, model_params=model_setup)
     return network
 
-import os
 if __name__ == '__main__':
+
     logger.set_level(40)
     args = sys.argv[1:]
     if '-path' not in args:

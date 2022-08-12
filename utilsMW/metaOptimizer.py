@@ -37,9 +37,9 @@ class TaylorSignalModule(SignalModule):
     def __init__(self, model, loss_fct, lr, mlr):
         super().__init__(model=model, loss_fct=loss_fct)
         #self.meta_optimizer = torch.optim.Adam(params=self.model.parameters(), lr=lr)
-        self.meta_optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=lr, weight_decay=1e-1)
         self.mlr = mlr
         self.lr = lr
+        self.init = False
 
     def init_model(self, inpt):
         self.model.super_init = False
@@ -54,6 +54,8 @@ class TaylorSignalModule(SignalModule):
         inpt_obs = inpt_obs.repeat((1, trajectories.size(1), 1))
         #inpt_super = torch.concat((trajectories, original_trajectories, inpt_obs), dim = -1)
         inpt_super = torch.concat((trajectories, inpt_obs), dim = -1)
+        if not self.init:
+            self.init_model(inpt=inpt_super)
         result =  super().forward(inpt_super)
 
         self.lr = self.meta_optimizer.param_groups[0]['lr']
@@ -153,7 +155,7 @@ class MetaModule():
                     best_expected_success[improve_mask]= neg_log_tailor_results_after[improve_mask].detach()
                     best_trj[improve_mask] = opt_gen_result[improve_mask].detach()
                 best_expected_mean = best_expected_success.mean()
-                self.writer({str(self.optim_run) +' in optimisation ':torch.exp(-best_expected_mean)}, train=False, step=step)
+                self.writer({str(self.optim_run) +' in optimisation ':torch.exp(-best_expected_mean.detach())}, train=False, step=step)
                 step += 1
             self.main_signal.model.load_state_dict(main_signal_state_dict)
             return {
