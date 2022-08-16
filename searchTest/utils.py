@@ -476,7 +476,6 @@ def parse_sampled_transitions(transitions, new_epoch, extractor):
             observations.append(torch.cat([*epch_observations], dim=0).unsqueeze(0))
             actions.append(epch_actions)
             
-            rewards.append(success)
             epch_actions = []
             epch_observations = []
         
@@ -491,17 +490,19 @@ def parse_sampled_transitions(transitions, new_epoch, extractor):
         
     observations.append(torch.cat([*epch_observations], dim=0).unsqueeze(0))
     actions.append(epch_actions)
+    rewards.append(success)
 
 
-    actions = torch.tensor(np.array(actions))
-    observations = torch.cat([*observations], dim=0)
-    rewards = torch.tensor(np.array(rewards))
+    actions = torch.tensor(np.array(actions), dtype=torch.float)
+    observations = torch.cat([*observations], dim=0).type(torch.float)
+    rewards = torch.tensor(np.array(rewards), dtype=torch.float)
     return actions, observations, rewards
 
 def sample_expert_transitions(policy, env, episodes):
+
     expert = policy
 
-    print("Sampling expert transitions.")
+    print(f"Sampling expert transitions. {episodes}")
     rollouts = rollout.rollout(
         expert,
         env,

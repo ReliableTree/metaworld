@@ -95,3 +95,6 @@ class ActiveCriticArgs:
 
     def set_weight_decay(self, weight_decay:float):
         self.weight_decay = weight_decay
+
+    def set_eval_epochs(self, epochs:int):
+        self.eval_epochs = epochs

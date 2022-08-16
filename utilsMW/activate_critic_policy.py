@@ -7,7 +7,7 @@ import copy
 from stable_baselines3.common.policies import BaseModel
 from typing import Any, Dict, List, Optional, Tuple, Type, Union
 import numpy as np
-from MetaWorld.utilsMW.metaOptimizer import TaylorSignalModule
+from MetaWorld.utilsMW.metaOptimizer import TaylorSignalModule, SignalModule
 from MetaWorld.utilsMW.model_setup_obj import ActiveCriticArgs
 
 """
@@ -28,7 +28,7 @@ class ActiveCriticPolicy(BaseModel):
         observation_space,
         action_space,
         main_signal, 
-        tailor_signals, 
+        tailor_signals:TaylorSignalModule, 
         lr, 
         return_mode=0, 
         writer=None, 
@@ -65,15 +65,19 @@ class ActiveCriticPolicy(BaseModel):
         episode_start: Optional[np.ndarray] = None,
         deterministic: bool = False,
     ) -> torch.Tensor:
+
         vec_obsv = self.args_obj.extractor.forward(observation)
+
         if self.last_goal is not None:
-            if not torch.equal(self.last_goal, vec_obsv[0,3:6]):
+            if self.args_obj.new_epoch(self.last_goal, vec_obsv):
                 self.current_step = 0
                 #print('new epsiode')
         if self.current_step == 0:
-            self.last_goal = vec_obsv[0,3:6]
+
+            self.last_goal = vec_obsv
             vec_obsv = vec_obsv.unsqueeze(1).repeat([1,self.args_obj.epoch_len, 1]).to(self.args_obj.device)
             self.pred_actions = self.forward(inpt=vec_obsv)['gen_trj'].detach().cpu().numpy()
+
             #self.pred_actions = self.forward(inpt=vec_obsv)['gen_trj']
             self.seq_len = self.pred_actions.shape[1]    
         result = self.pred_actions[0, self.current_step]

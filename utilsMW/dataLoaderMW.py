@@ -56,8 +56,9 @@ class TorchDatasetMWToy(torch.utils.data.Dataset):
         return self.data[index], self.label[index]
 
 class TorchDatasetTailor(torch.utils.data.Dataset):
-    def __init__(self, trajectories, obsv, success, ftrj) -> None:
+    def __init__(self, trajectories, obsv, success:torch.Tensor, ftrj) -> None:
         super().__init__()
+        success = success.type(torch.bool)
         self.s_trajectories = trajectories[success==1]
         self.s_ftrj = ftrj[success==1]
         self.s_obsv = obsv[success==1]
@@ -73,6 +74,8 @@ class TorchDatasetTailor(torch.utils.data.Dataset):
         self.len = max(self.s_len, self.f_len)
 
     def add_data(self, trajectories, obsv, success, ftrj):
+        success = success.type(torch.bool)
+
         self.s_trajectories = torch.cat((self.s_trajectories, trajectories[success==1]), dim=0)
         self.s_ftrj = torch.cat((self.s_ftrj, ftrj[success==1]), dim=0)
         self.s_obsv = torch.cat((self.s_obsv, obsv[success==1]), dim=0)

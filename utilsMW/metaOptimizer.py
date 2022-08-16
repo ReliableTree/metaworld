@@ -7,7 +7,9 @@ import torch
 import torch.nn as nn
 import copy
 
-from zmq import device
+from LanguagePolicies.utils.Transformer import TailorTransformer, TransformerModel
+
+import typing
 
 def loss_fct_proto(inpt, label):
     return ((inpt - label)**2)
@@ -26,7 +28,7 @@ class LinearNN(nn.Module):
         return self.model(inpt)
     
 class SignalModule():
-    def __init__(self, model, loss_fct):
+    def __init__(self, model:TransformerModel, loss_fct):
         self.model = model
         self.loss_fct = loss_fct
 
@@ -34,7 +36,7 @@ class SignalModule():
         return self.model.forward(inpt)
 
 class TaylorSignalModule(SignalModule):
-    def __init__(self, model, loss_fct, lr, mlr):
+    def __init__(self, model:TailorTransformer, loss_fct, lr, mlr):
         super().__init__(model=model, loss_fct=loss_fct)
         #self.meta_optimizer = torch.optim.Adam(params=self.model.parameters(), lr=lr)
         self.mlr = mlr
@@ -44,8 +46,9 @@ class TaylorSignalModule(SignalModule):
     def init_model(self, inpt):
         self.model.super_init = False
         self.model.forward(inpt)
-        #self.meta_optimizer = torch.optim.Adam(params=self.model.parameters(), lr=self.lr)
-        self.meta_optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.lr, weight_decay=1e-1)
+        self.meta_optimizer = torch.optim.Adam(params=self.model.parameters(), lr=self.lr)
+        self.init = True
+        #self.meta_optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.lr, weight_decay=1e-1)
 
     def forward(self, inpt):
         trajectories = inpt['result']
@@ -236,7 +239,7 @@ def meta_optimizer(main_module, tailor_modules, inpt, d_out, epoch, debug_second
 
     return main_module, tailor_modules, result, debug_dict
 
-def tailor_optimizer(tailor_modules, succ, failed):
+def tailor_optimizer(tailor_modules:typing.List[TaylorSignalModule], succ, failed):
     debug_dict = {}
     if len(succ[0].shape) < 3:
         for ob in succ:
@@ -258,18 +261,12 @@ def tailor_optimizer(tailor_modules, succ, failed):
         tailor_inpt['inpt'] = inpt
         tailor_inpt['original'] = ftrj
         tailor_result = tailor_module.forward(tailor_inpt)
-        tailor_dist = torch.zeros(1, device=tailor_result.device, requires_grad=True)
-        for tr in tailor_results:
-            tailor_dist = tailor_dist-((tailor_result - tr)**2).mean()
-        tailor_dist = tailor_dist/(len(tailor_results)+1)
         tailor_loss_input = {}
         tailor_loss_input['tailor_result'] = tailor_result
         tailor_loss, loss_positive, loss_negative = tailor_module.loss_fct_tailor(inpt = tailor_loss_input, label = label)
         if not torch.isnan(tailor_loss):
             tailor_results.append(torch.clone(tailor_result.detach()))
-            debug_dict['tailor dist ' +str(i)] = tailor_dist.mean()
-            tailor_loss_dist = (tailor_loss + 10*tailor_dist).mean()
-            tailor_loss_dist.backward()
+            tailor_loss.backward()
             tailor_module.meta_optimizer.step()
             debug_dict['tailor loss '+str(i)] = tailor_loss.detach()
             debug_dict['tailor loss positive '+str(i)] = loss_positive.detach()

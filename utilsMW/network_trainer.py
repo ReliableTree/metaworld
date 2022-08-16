@@ -198,7 +198,7 @@ class NetworkTrainer(nn.Module):
             disc_step = 0
             model_step = 0
             self.num_vals += 1
-            complete = (self.num_vals%1 == 0)
+            complete = (self.num_vals%20 == 0)
             print(f'logname: {self.logname}')
             if complete:
                 self.runValidation(quick=False, epoch=epoch, save=True, complete=complete)            
@@ -207,9 +207,13 @@ class NetworkTrainer(nn.Module):
             self.scheduler.step()
 
 
-    def sample_new_episode(self, policy, env, episodes = 1, add_data = True):
+    def sample_new_episode(self, policy:ActiveCriticPolicy, env, episodes = 1, add_data = True):
         transitions = sample_expert_transitions(policy, env, episodes)
-        actions, observations, rewards   = parse_sampled_transitions(transitions=transitions, new_epoch=self.network_args.new_epoch, extractor=self.extractor)
+        datas  = parse_sampled_transitions(transitions=transitions, new_epoch=self.network_args.new_epoch, extractor=self.extractor)
+        device_data = []
+        for data in datas:
+            device_data.append(data.to(self.network_args.device))
+        actions, observations, rewards = device_data
         if add_data:
             self.add_data_to_loader(inpt_obs_opt=observations, trajectories_opt=actions, success_opt=rewards, ftrjs_opt=actions, episodes=episodes)
         return actions, observations, rewards
@@ -234,6 +238,7 @@ class NetworkTrainer(nn.Module):
         actions, observations, success = data
         fail = ~success
         taylor_inpt = {'result':actions, 'inpt':observations, 'original':actions}
+
         for i, ts in enumerate(self.policy.tailor_signals):
             expected_success = ts.forward(taylor_inpt)
             #expected_success = self.tailor_modules[0].forward(taylor_inpt)
@@ -275,9 +280,9 @@ class NetworkTrainer(nn.Module):
         #with torch.no_grad():
         if (not quick):
             if complete:
-                num_envs = 100
+                num_envs = self.network_args.eval_epochs
             else:
-                num_envs = 10
+                num_envs = self.network_args.eval_epochs
             
             #torch.manual_seed(1)
             print("Running full validation...")
@@ -405,23 +410,21 @@ class NetworkTrainer(nn.Module):
 
     def add_data_to_loader(self, inpt_obs_opt, trajectories_opt, success_opt, ftrjs_opt, episodes):
         if self.add_data:
+
+            print(f'inpt_obs_opt: {inpt_obs_opt.shape}')
+            print(f'trajectories_opt: {trajectories_opt.shape}')
+            print(f'success_opt: {success_opt}')
+            print(f'ftrjs_opt: {ftrjs_opt.shape}')
+            print(f'episodes: {episodes}')
+
             inpt_obs_opt = inpt_obs_opt.to(self.network_args.device)
             trajectories_opt = trajectories_opt.to(self.network_args.device)
             success_opt = success_opt.to(self.network_args.device)
             ftrjs_opt = ftrjs_opt.to(self.network_args.device)
-            """if self.trajectories is not None:
-                self.trajectories = torch.cat((self.trajectories, trajectories_opt[:episodes]), dim=0)
-                self.inpt_obs = torch.cat((self.inpt_obs, inpt_obs_opt[:episodes]), dim=0)
-                self.success = torch.cat((self.success, success_opt[:episodes]), dim=0)
-                self.ftrj = torch.cat((self.ftrj, ftrjs_opt[:episodes]))
-            else:
-                self.trajectories = trajectories_opt
-                self.inpt_obs = inpt_obs_opt
-                self.success = success_opt
-                self.ftrj = ftrjs_opt"""
                 
             train_data = self.train_loader.dataset
             if success_opt[:episodes].sum() > 0:
+                success_opt = success_opt.type(torch.bool)
                 train_data.add_data(data=inpt_obs_opt[:episodes][success_opt[:episodes]], label=trajectories_opt[:episodes][success_opt[:episodes]])
                 #self.train_loader = torch.utils.data.DataLoader(train_data, batch_size=32, shuffle=True)
             
