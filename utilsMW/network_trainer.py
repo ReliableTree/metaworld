@@ -1,6 +1,7 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 from functools import total_ordering
 from os import name, path, makedirs
+from xml.etree.ElementTree import QName
 from cv2 import add
 from imitation import data
 import tensorflow as tf
@@ -155,7 +156,6 @@ class NetworkTrainer(nn.Module):
                 policy = self.policy
                 policy.return_mode = 1
                 self.sample_new_episode(policy=policy, env=self.env, episodes=1)
-
             while model_step < self.network_args.val_every:
                 #print("Epoch: {:3d}/{:3d}".format(epoch+1, epochs)) 
                 validation_loss = 0.0
@@ -185,7 +185,6 @@ class NetworkTrainer(nn.Module):
                     self.write_tboard_scalar(debug_dict=debug_dict, train=True)
 
                 
-
                 self.model.train()
                 model_step += len(self.train_loader.dataset)
                 for step, (d_in, d_out) in enumerate(self.train_loader):
@@ -198,7 +197,7 @@ class NetworkTrainer(nn.Module):
             disc_step = 0
             model_step = 0
             self.num_vals += 1
-            complete = (self.num_vals%20 == 0)
+            complete = (self.num_vals%self.network_args.complete_modulo == 0)
             print(f'logname: {self.logname}')
             if complete:
                 self.runValidation(quick=False, epoch=epoch, save=True, complete=complete)            
@@ -314,13 +313,10 @@ class NetworkTrainer(nn.Module):
                 print('complete:')
                 self.policy.optim_run += 1
                 debug_dict = self.runvalidationTaylor(data=data_gen, return_mode=0)
-                self.write_tboard_scalar(debug_dict=debug_dict, train = False, step=num_examples)
+                self.write_tboard_scalar(debug_dict=debug_dict, train = False)
                 debug_dict = self.runvalidationTaylor(data=data_opt, return_mode=1)
+                self.write_tboard_scalar(debug_dict=debug_dict, train = False)
 
-                #tailor_success_optimized = debug_dict['true positive optimized']
-                self.write_tboard_scalar(debug_dict=debug_dict, train = False, step=num_examples)
-                #debug_dict = self.runvalidationTaylor(return_mode=2, num_exp=num_eval)
-                #self.write_tboard_scalar(debug_dict=debug_dict, train = False, step=num_examples)
             
             
             if len(success_opt)>0:
@@ -342,6 +338,7 @@ class NetworkTrainer(nn.Module):
             self.write_tboard_scalar({'num optimisation steps':torch.tensor(policy.max_steps)}, train= False)
 
             print(f'mean success after: {mean_success_opt}')
+            debug_dict = {}
             debug_dict['success rate optimized'] = mean_success_opt
             debug_dict['improved success rate'] = mean_success_opt - mean_success
             if mean_success_opt - mean_success > self.best_improved_success:
@@ -436,7 +433,8 @@ class NetworkTrainer(nn.Module):
         print(f'num demonstrations: {len(self.train_loader.dataset)}')
 
     def write_tboard_scalar(self, debug_dict, train, step = None):
-        step = self.global_step
+        if step is None:
+            step = self.global_step
         if self.use_tboard:
                 for para, value in debug_dict.items():
                     value = value.to('cpu')
@@ -594,7 +592,7 @@ class NetworkTrainer(nn.Module):
     def loadNetworkFromFile(self, path, device = 'cuda'):
         self.load_state_dict(torch.load(path + "policy_network", map_location=device))
         self.tailor_modules[0].model.load_state_dict(torch.load(path + "tailor_network", map_location=device))
-        self.optimizer.load_state_dict(torch.load(path + "optimizer", map_location=device))
+        self.optimizer.load_state_dict(torch.load(path + "optimizer"))
         self.tailor_modules[0].meta_optimizer.load_state_dict(torch.load(path + "tailor_optimizer", map_location=device))
         
         '''self.inpt_obs = torch.load(path+'obs', map_location=device)
@@ -602,7 +600,7 @@ class NetworkTrainer(nn.Module):
         self.success = torch.load(path+'success', map_location=device).type(torch.bool)
         self.ftrj = torch.load(path+'ftrj', map_location=device)'''
 
-        self.global_step = int(torch.load(path+'global_step', map_location=device))
+        self.global_step = int(torch.load(path+'global_step'))
 
         self.tailor_loader = torch.load(path+'tailor')
         self.train_loader = torch.load(path+'train')

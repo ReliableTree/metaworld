@@ -43,7 +43,7 @@ class ActiveCriticPolicy(BaseModel):
         self.return_mode = return_mode
         self.writer = writer
         self.optim_run = 0
-        self.max_steps =5
+        self.max_steps = args_obj.opt_steps
         self.last_update = 0
         self.last_goal = None
         self.seq_len = None
@@ -103,7 +103,7 @@ class ActiveCriticPolicy(BaseModel):
         elif self.return_mode == 1:
             opt_gen_result = torch.clone(gen_result.detach())
             opt_gen_result.requires_grad_(True)
-            optimizer = torch.optim.Adam([opt_gen_result], lr=self.lr)
+            optimizer = torch.optim.AdamW([opt_gen_result], lr=self.lr)
 
             best_expected_success = None
             best_expected_mean = torch.tensor(float('inf'))
@@ -151,5 +151,5 @@ class ActiveCriticPolicy(BaseModel):
                 'gen_trj': best_trj.detach(),
                 'inpt_trj' : gen_result.detach(),
                 'exp_succ_bef': expected_succes_before,
-                'exp_succ_after': best_expected_mean,
+                'exp_succ_after': torch.exp(-best_expected_mean.detach()),
             }

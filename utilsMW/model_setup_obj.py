@@ -98,3 +98,9 @@ class ActiveCriticArgs:
 
     def set_eval_epochs(self, epochs:int):
         self.eval_epochs = epochs
+
+    def set_opt_steps(self, opt_steps:int):
+        self.opt_steps = opt_steps
+
+    def set_complete_modulo(self, complete:int):
+        self.complete_modulo = complete
