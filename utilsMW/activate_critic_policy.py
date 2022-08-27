@@ -58,7 +58,7 @@ class ActiveCriticPolicy(BaseModel):
         for ts in self.tailor_signals:
             ts.model.train()
 
-    def predict(
+    def predict2(
         self,
         observation: Union[np.ndarray, Dict[str, np.ndarray]],
         state: Optional[Tuple[np.ndarray, ...]] = None,
@@ -88,6 +88,30 @@ class ActiveCriticPolicy(BaseModel):
             self.current_step += 1
         return result, -1
 
+    def predict(
+        self,
+        observation: Union[np.ndarray, Dict[str, np.ndarray]],
+        state: Optional[Tuple[np.ndarray, ...]] = None,
+        episode_start: Optional[np.ndarray] = None,
+        deterministic: bool = False,
+    ) -> torch.Tensor:
+
+        vec_obsv = self.args_obj.extractor.forward(observation).unsqueeze(1).to(self.args_obj.device)
+
+        if self.last_goal is not None:
+            if self.args_obj.new_epoch(self.last_goal, vec_obsv):
+                self.current_step = 0
+                #print('new epsiode')
+        if self.current_step == 0:
+            self.last_goal = vec_obsv
+            self.vec_obsv = vec_obsv
+        else:
+            self.vec_obsv = torch.cat((self.vec_obsv, vec_obsv), dim=1)
+        result = self.forward(inpt=self.vec_obsv)['gen_trj'].detach().cpu()[0,-1].numpy()
+            #self.pred_actions = self.forward(inpt=vec_obsv)['gen_trj']
+        self.current_step += 1
+        return result, -1
+
     def forward(self, inpt):
         if type(inpt) is torch.Tensor:
             return self._forward(inpt)
@@ -98,7 +122,7 @@ class ActiveCriticPolicy(BaseModel):
     def _forward(self, inpt):
         main_signal_state_dict= copy.deepcopy(self.main_signal.model.state_dict())
         gen_result = self.main_signal.forward(inpt)['gen_trj']
-        if self.return_mode == 0:
+        if self.return_mode == 0 or inpt.shape[1] != self.args_obj.epoch_len:
             return {'gen_trj': gen_result, 'inpt_trj' : gen_result}
         elif self.return_mode == 1:
             opt_gen_result = torch.clone(gen_result.detach())
