@@ -17,7 +17,7 @@ class NetworkSetup:
         self.critic_nn.nhead = 6
         self.critic_nn.d_hid = 60
         self.critic_nn.nlayers = 4
-        self.critic_nn.d_result = 2
+        self.critic_nn.d_result = 1
         self.critic_nn.seq_len = 100
         
         self.quick_val = False
@@ -87,8 +87,8 @@ class ActiveCriticArgs:
     def set_batchsize(self, batch_size:int):
         self.batch_size = batch_size
 
-    def set_val_every(self, interval:int):
-        self.val_every = interval
+    def set_n_steps(self, n_steps:int):
+        self.n_steps = n_steps
 
     def set_imitation_phase(self, imitation_phase:bool):
         self.imitation_phase=imitation_phase

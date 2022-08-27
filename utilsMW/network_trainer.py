@@ -156,7 +156,7 @@ class NetworkTrainer(nn.Module):
                 policy = self.policy
                 policy.return_mode = 1
                 self.sample_new_episode(policy=policy, env=self.env, episodes=1)
-            while model_step < self.network_args.val_every:
+            while model_step < self.network_args.n_steps:
                 #print("Epoch: {:3d}/{:3d}".format(epoch+1, epochs)) 
                 validation_loss = 0.0
                 train_loss = []
@@ -168,10 +168,10 @@ class NetworkTrainer(nn.Module):
                     lmp = None
                     lmn = None
                     disc_step += len(self.tailor_loader.dataset)
-                    for succ, failed in self.tailor_loader:
+                    for data in self.tailor_loader:
 
                         self.global_step += 1
-                        debug_dict = self.tailor_step(succ, failed)
+                        debug_dict = self.tailor_step(data)
                         if lmp is None:
                             lmp = debug_dict['tailor loss positive'].reshape(1)
                             lmn = debug_dict['tailor loss positive'].reshape(1)
@@ -217,8 +217,8 @@ class NetworkTrainer(nn.Module):
             self.add_data_to_loader(inpt_obs_opt=observations, trajectories_opt=actions, success_opt=rewards, ftrjs_opt=actions, episodes=episodes)
         return actions, observations, rewards
     
-    def tailor_step(self, succ, failed):
-        debug_dict = tailor_optimizer(tailor_modules = self.tailor_modules, succ=succ, failed=failed)
+    def tailor_step(self, data):
+        debug_dict = tailor_optimizer(tailor_modules = self.tailor_modules, data=data)
         self.write_tboard_scalar(debug_dict=debug_dict, train=True)
         return debug_dict
     
@@ -242,7 +242,7 @@ class NetworkTrainer(nn.Module):
             expected_success = ts.forward(taylor_inpt)
             #expected_success = self.tailor_modules[0].forward(taylor_inpt)
 
-            expected_success = expected_success.max(dim=-1)[1].reshape(-1).type(torch.bool)
+            expected_success = expected_success.reshape(-1).type(torch.bool)
             expected_fail = ~ expected_success
             expected_success = expected_success.type(torch.float)
             expected_fail = expected_fail.type(torch.float)
@@ -428,7 +428,7 @@ class NetworkTrainer(nn.Module):
             tailor_data = self.tailor_loader.dataset
             tailor_data.add_data(trajectories=trajectories_opt, obsv=inpt_obs_opt, success=success_opt, ftrj=ftrjs_opt)
             self.write_tboard_scalar({'num examples':torch.tensor(len(tailor_data))}, train=False)
-            self.init_train = len(tailor_data.f_trajectories) == 0
+            self.init_train = ~tailor_data.success.sum() == 0
         print(f'num examples: {self.tailor_loader.dataset._num_elements()}')
         print(f'num demonstrations: {len(self.train_loader.dataset)}')
 

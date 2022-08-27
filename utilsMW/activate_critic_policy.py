@@ -103,53 +103,50 @@ class ActiveCriticPolicy(BaseModel):
         elif self.return_mode == 1:
             opt_gen_result = torch.clone(gen_result.detach())
             opt_gen_result.requires_grad_(True)
-            optimizer = torch.optim.AdamW([opt_gen_result], lr=self.lr)
+            optimizer = torch.optim.Adam([opt_gen_result], lr=self.lr)
 
             best_expected_success = None
-            best_expected_mean = torch.tensor(float('inf'))
+            best_expected_mean = 0
             best_trj = torch.clone(gen_result)
             step = 0
             if self.tailor_signals[0].init:
                 for ts in self.tailor_signals:
                     ts.model.eval()
             gen_result = gen_result.detach()
-            while best_expected_mean > -torch.log(torch.tensor(0.95)) and (step <= self.max_steps):
-                optimizer.zero_grad()
+            while best_expected_mean < 0.95 and (step <= self.max_steps):
                 tailor_inpt = {'result':opt_gen_result, 'inpt':inpt, 'original':gen_result}
                 tailor_results = []
                 for ts in self.tailor_signals:
                     tailor_results.append(ts.forward(tailor_inpt))
-                expected_succes_before = torch.ones_like(tailor_results[0].max(dim=-1)[1])
-                goal_label = torch.ones_like(tailor_results[0][:,0])
+                expected_success = torch.ones_like(tailor_results[0])
+                goal_label = torch.ones_like(tailor_results[0])
                 tailor_loss = torch.zeros(1, device=goal_label.device, requires_grad=True)
                 for i, tr in enumerate(tailor_results):
-                    expected_succes_before = expected_succes_before * tr.max(dim=-1)[1]
-                    tailor_loss_inpt = {'tailor_result': tr}
-                    tailor_loss = tailor_loss+self.tailor_signals[i].loss_fct_tailor(inpt=tailor_loss_inpt, label=goal_label)[0]
+                    expected_success = expected_success * tr[i]
+                    tailor_loss = tailor_loss+self.tailor_signals[i].loss_fct_tailor(inpt=tr, label=goal_label)[0]
+                    
+                if best_expected_success is None:
+                    best_expected_success = torch.clone(expected_success)
+                    best_trj = opt_gen_result.detach()
+                    expected_succes_before = torch.clone(expected_success)
+                else:
+                    improve_mask = (expected_success > best_expected_success).reshape(-1)
+                    best_expected_success[improve_mask]= expected_success[improve_mask].detach()
+                    best_trj[improve_mask] = opt_gen_result[improve_mask].detach()
 
                 tailor_loss = tailor_loss/len(self.tailor_signals)
-                expected_succes_before = expected_succes_before.type(torch.float).mean()
-
+                best_expected_mean = best_expected_success.mean()
+                
+                optimizer.zero_grad()
                 tailor_loss.backward()
                 optimizer.step()
-                tailor_after_inpt = {'result':opt_gen_result, 'inpt':inpt, 'original':gen_result}
-                neg_log_tailor_results_after = torch.zeros(inpt.size(0), device=expected_succes_before.device)
-                for i, ts in enumerate(self.tailor_signals):
-                    neg_log_tailor_results_after = neg_log_tailor_results_after-torch.log(ts.forward(tailor_after_inpt)[:,1])
-                if best_expected_success is None:
-                    best_expected_success = torch.clone(neg_log_tailor_results_after)
-                    best_trj = opt_gen_result.detach()
-                else:
-                    improve_mask = neg_log_tailor_results_after < best_expected_success
-                    best_expected_success[improve_mask]= neg_log_tailor_results_after[improve_mask].detach()
-                    best_trj[improve_mask] = opt_gen_result[improve_mask].detach()
-                best_expected_mean = best_expected_success.mean()
-                self.writer({str(self.optim_run) +' in optimisation ':torch.exp(-best_expected_mean.detach())}, train=False, step=step)
+
+                self.writer({str(self.optim_run) +' in optimisation ':best_expected_mean.detach()}, train=False, step=step)
                 step += 1
             self.main_signal.model.load_state_dict(main_signal_state_dict, strict=False)
             return {
                 'gen_trj': best_trj.detach(),
                 'inpt_trj' : gen_result.detach(),
                 'exp_succ_bef': expected_succes_before,
-                'exp_succ_after': torch.exp(-best_expected_mean.detach()),
+                'exp_succ_after': best_expected_mean,
             }

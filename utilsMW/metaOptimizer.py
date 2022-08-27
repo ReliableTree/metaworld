@@ -65,14 +65,28 @@ class TaylorSignalModule(SignalModule):
         return result
 
     def loss_fct_tailor(self, inpt, label):
+        label = label.reshape(-1).type(torch.float)
+        inpt = inpt.reshape(-1).type(torch.float)
         #label = 1 means success
-        label = label.reshape(-1).type(torch.long)
+        '''(label = label.reshape(-1).type(torch.long)
         label_one_hot = torch.nn.functional.one_hot(label, num_classes = 2)
 
         inpt = inpt['tailor_result']
         loss_negative = ((inpt[label==0] - label_one_hot[label==0])**2).mean()
         loss_positive = ((inpt[label==1] - label_one_hot[label==1])**2).mean()
-        loss = ((inpt.reshape(-1)-label_one_hot.reshape(-1))**2).mean()
+        loss = ((inpt.reshape(-1)-label_one_hot.reshape(-1))**2).mean()'''
+        loss = (inpt - label)**2
+        label = label.type(torch.bool)
+        label_sum = label.sum()
+        if label_sum > 0:
+            loss_positive = loss[label].mean()
+        else:
+            loss_positive = torch.zeros(1, device=inpt.device).mean()
+        if label_sum < len(label):
+            loss_negative = loss[~label].mean()
+        else:
+            loss_negative = torch.zeros(1, device=inpt.device).mean()
+        loss = loss.mean()
         return loss, loss_positive, loss_negative
 
 class MetaModule():
@@ -96,6 +110,7 @@ class MetaModule():
             ts.model.train()
     
     def forward(self, inpt, epochs = 100):
+        raise NotImplementedError
         main_signal_state_dict= copy.deepcopy(self.main_signal.model.state_dict())
         gen_result = self.main_signal.forward(inpt)['gen_trj']
         if self.return_mode == 0:
@@ -217,8 +232,6 @@ def meta_optimizer(main_module, tailor_modules, inpt, d_out, epoch, debug_second
 
         #second forward pass
         result = higher_main.model(inpt)
-        #print(f'result shape: {result["gen_trj"].shape}')
-        #print(f'result: {result}')
         loss, debug_dict_main = higher_main.loss_fct(d_out = d_out, result=result, model_params=model_params)
         debug_dict['meta_diff'] = proto_loss-loss
         debug_dict.update(debug_dict_main)
@@ -239,31 +252,23 @@ def meta_optimizer(main_module, tailor_modules, inpt, d_out, epoch, debug_second
 
     return main_module, tailor_modules, result, debug_dict
 
-def tailor_optimizer(tailor_modules:typing.List[TaylorSignalModule], succ, failed):
+def tailor_optimizer(tailor_modules:typing.List[TaylorSignalModule], data):
     debug_dict = {}
-    if len(succ[0].shape) < 3:
-        for ob in succ:
+    if len(data[0].shape) < 3:
+        for ob in data:
             ob = ob.unsqueeze(0)
-        for ob in failed:
-            ob = ob.unsqueeze(0)
-    s_trj, s_obs, success, s_ftrj = succ
-    f_trj, f_obs, fail, f_ftrj = failed
 
-    trajectories = torch.cat((s_trj, f_trj), dim=0)
-    ftrj = torch.cat((s_ftrj, f_ftrj), dim=0)
-    inpt = torch.cat((s_obs, f_obs), dim=0)
-    label = torch.cat((success, fail), dim=0)
+    trj, obsv, label, ftrj = data
+
     tailor_results = []
     for i, tailor_module in enumerate(tailor_modules):
         tailor_module.meta_optimizer.zero_grad()
         tailor_inpt = {}
-        tailor_inpt['result'] = trajectories
-        tailor_inpt['inpt'] = inpt
+        tailor_inpt['result'] = trj
+        tailor_inpt['inpt'] = obsv
         tailor_inpt['original'] = ftrj
         tailor_result = tailor_module.forward(tailor_inpt)
-        tailor_loss_input = {}
-        tailor_loss_input['tailor_result'] = tailor_result
-        tailor_loss, loss_positive, loss_negative = tailor_module.loss_fct_tailor(inpt = tailor_loss_input, label = label)
+        tailor_loss, loss_positive, loss_negative = tailor_module.loss_fct_tailor(inpt = tailor_result, label = label)
         if not torch.isnan(tailor_loss):
             tailor_results.append(torch.clone(tailor_result.detach()))
             tailor_loss.backward()
