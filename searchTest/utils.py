@@ -523,3 +523,33 @@ def count_parameters(model):
     print(table)
     print(f"Total Trainable Params: {total_params}")
     return total_params
+
+def new_epoch_np(current_obs, check_obsvs):
+    result =  not np.all(np.equal(current_obs.reshape(-1)[-3:], check_obsvs.reshape(-1)[-3:]))
+    return result
+
+def HER_Transitions(transitions, new_epoch:new_epoch_np):
+    last_goal = transitions[0]['obs'][-3:]
+    begin_epoch_pointer = 0
+    end_epoch_pointer = 0
+    result = []
+    for i, transition in enumerate(transitions):
+        result.append(transition)
+        current_obs = transition['obs']
+        last_trans = (i == len(transitions) - 1)
+        nt = new_epoch(current_obs, last_goal) or last_trans
+        if nt:
+            end_epoch_pointer = i      
+            if last_trans:
+                end_epoch_pointer += 1
+            for j, rev_ in enumerate(transitions[begin_epoch_pointer:end_epoch_pointer]):
+                #switch terminal goal position
+                new_obs = np.copy(rev_['obs'])
+                new_obs[-3:] = last_obs[4:7]
+                result[begin_epoch_pointer+j]['obs'] = new_obs
+                assert np.all(np.equal(result[begin_epoch_pointer+j]['obs'], new_obs))
+            result[end_epoch_pointer-1]['infos']['success'] = 1.0
+            last_goal = current_obs[-3:]
+            begin_epoch_pointer = i
+        last_obs = current_obs
+    return result

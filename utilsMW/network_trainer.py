@@ -17,7 +17,7 @@ from imitation.data.wrappers import RolloutInfoWrapper
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from MetaWorld.searchTest.utils import sample_expert_transitions, VecExtractor, parse_sampled_transitions
+from MetaWorld.searchTest.utils import sample_expert_transitions, VecExtractor, parse_sampled_transitions, HER_Transitions, new_epoch_np
 from MetaWorld.utilsMW.activate_critic_policy import ActiveCriticPolicy
 import copy
 import os
@@ -160,7 +160,7 @@ class NetworkTrainer(nn.Module):
                 #print("Epoch: {:3d}/{:3d}".format(epoch+1, epochs)) 
                 validation_loss = 0.0
                 train_loss = []
-                if not self.init_train:
+                if not self.init_train and False:
                     self.policy.train()
                     #self.model.eval()
                     loss_module = 1
@@ -186,6 +186,8 @@ class NetworkTrainer(nn.Module):
 
                 
                 self.model.train()
+                self.policy.train()
+
                 model_step += len(self.train_loader.dataset)
                 for step, (d_in, d_out) in enumerate(self.train_loader):
                     train_loss.append(self.step(d_in, d_out, train=True))
@@ -200,14 +202,16 @@ class NetworkTrainer(nn.Module):
             complete = (self.num_vals%self.network_args.complete_modulo == 0)
             print(f'logname: {self.logname}')
             if complete:
-                self.runValidation(quick=False, epoch=epoch, save=True, complete=complete)            
+                self.runValidation(quick=False, epoch=epoch, save=True, complete=False)            
 
 
             self.scheduler.step()
 
 
-    def sample_new_episode(self, policy:ActiveCriticPolicy, env, episodes = 1, add_data = True):
+    def sample_new_episode(self, policy:ActiveCriticPolicy, env, episodes = 1, add_data = True, her = True):
         transitions = sample_expert_transitions(policy, env, episodes)
+        if her:
+            transitions = HER_Transitions(transitions=transitions, new_epoch=new_epoch_np)
         datas  = parse_sampled_transitions(transitions=transitions, new_epoch=self.network_args.new_epoch, extractor=self.extractor)
         device_data = []
         for data in datas:
@@ -289,15 +293,8 @@ class NetworkTrainer(nn.Module):
             policy = self.policy
             policy.main_signal.model.eval()
             policy.return_mode = 0
-            '''gt_policy_success = False
-            while not gt_policy_success:
-                envs = self.successSimulation.get_env(n=num_envs, env_tag = self.env_tag)
-                result = self.successSimulation.get_success(policy = policy, envs=envs)
-                if result is not False:
-                    trajectories, inpt_obs, label, success, ftrj = result
-                    gt_policy_success = True'''
             
-            actions, observations, success = self.sample_new_episode(policy=policy, env=self.env, episodes=num_envs, add_data=False)
+            actions, observations, success = self.sample_new_episode(policy=policy, env=self.env, episodes=num_envs, add_data=False, her=False)
             data_gen = (actions, observations, success.type(torch.bool))
             print(f'num envs: {len(actions)}')
             mean_success = success.mean()
@@ -305,8 +302,10 @@ class NetworkTrainer(nn.Module):
             print(f'mean success before: {mean_success}')
             debug_dict = {'success rate generated' : mean_success}
             self.write_tboard_scalar(debug_dict=debug_dict, train=False)
-            policy.return_mode = 1
-            actions_opt, observations_opt, success_opt = self.sample_new_episode(policy=policy, env=self.env, episodes=num_envs, add_data=False)
+            #TODO:
+            #Zurück ändern!
+            policy.return_mode = 0
+            actions_opt, observations_opt, success_opt = self.sample_new_episode(policy=policy, env=self.env, episodes=num_envs, add_data=False, her=False)
             data_opt = (actions_opt, observations_opt, success_opt.type(torch.bool))
 
             if complete:
