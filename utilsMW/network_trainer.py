@@ -1,6 +1,7 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 from functools import total_ordering
 from os import name, path, makedirs
+from random import seed
 from xml.etree.ElementTree import QName
 from cv2 import add
 from imitation import data
@@ -17,7 +18,7 @@ from imitation.data.wrappers import RolloutInfoWrapper
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from MetaWorld.searchTest.utils import sample_expert_transitions, VecExtractor, parse_sampled_transitions, HER_Transitions, new_epoch_np
+from MetaWorld.searchTest.utils import sample_expert_transitions, VecExtractor, parse_sampled_transitions, HER_Transitions, new_epoch_np, make_rollouts_vec
 from MetaWorld.utilsMW.activate_critic_policy import ActiveCriticPolicy
 import copy
 import os
@@ -112,7 +113,9 @@ class NetworkTrainer(nn.Module):
 
         self.policy.return_mode = 1
 
-        obsv = self.env.reset()
+        env = self.env()
+        obsv = env.reset().reshape([1,1,-1])
+        obsv = obsv.repeat(100, axis=1)
         _ = self.policy.predict(observation=obsv)
         self.optimizer = torch.optim.AdamW(params=self.model.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=self.network_args.weight_decay) 
         self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, 40, self.gamma_sl, verbose=False)
@@ -155,7 +158,8 @@ class NetworkTrainer(nn.Module):
             if self.add_data:
                 policy = self.policy
                 policy.return_mode = 1
-                self.sample_new_episode(policy=policy, env=self.env, episodes=1)
+                seed = np.random.randint(0, 1e10, 1)
+                self.sample_new_episode(policy=policy, episodes=1, seeds=seed)
             while model_step < self.network_args.n_steps:
                 #print("Epoch: {:3d}/{:3d}".format(epoch+1, epochs)) 
                 validation_loss = 0.0
@@ -208,8 +212,15 @@ class NetworkTrainer(nn.Module):
             self.scheduler.step()
 
 
-    def sample_new_episode(self, policy:ActiveCriticPolicy, env, episodes = 1, add_data = True, her = True):
-        transitions = sample_expert_transitions(policy, env, episodes)
+    def sample_new_episode(self, policy:ActiveCriticPolicy, episodes:int, seeds:list[int], add_data = True, her = True):
+        num_cpu = self.network_args.num_cpu
+        if num_cpu > episodes:
+            num_cpu = episodes
+
+        #num_cpu, env_constr, epoch_len, seed        
+        transitions = make_rollouts_vec(seeds=seeds, expert=policy, env_constr=self.env, num_cpu=num_cpu, epoch_len=self.network_args.epoch_len)
+
+        transitions = sample_expert_transitions(policy, self.env(), episodes)
         if her:
             transitions = HER_Transitions(transitions=transitions, new_epoch=new_epoch_np)
         datas  = parse_sampled_transitions(transitions=transitions, new_epoch=self.network_args.new_epoch, extractor=self.extractor)
@@ -217,6 +228,9 @@ class NetworkTrainer(nn.Module):
         for data in datas:
             device_data.append(data.to(self.network_args.device))
         actions, observations, rewards = device_data
+        actions = actions[:episodes]
+        observations = observations[:episodes]
+        rewards = rewards[:episodes]
         if add_data:
             self.add_data_to_loader(inpt_obs_opt=observations, trajectories_opt=actions, success_opt=rewards, ftrjs_opt=actions, episodes=episodes)
         return actions, observations, rewards
@@ -293,8 +307,9 @@ class NetworkTrainer(nn.Module):
             policy = self.policy
             policy.main_signal.model.eval()
             policy.return_mode = 0
-            
-            actions, observations, success = self.sample_new_episode(policy=policy, env=self.env, episodes=num_envs, add_data=False, her=False)
+            num_seeds = 1+num_envs//self.network_args.num_cpu
+            seeds = np.random.randint(0, 1e10, num_seeds)
+            actions, observations, success = self.sample_new_episode(policy=policy, env=self.env, episodes=num_envs, seeds=seeds, add_data=False, her=False)
             data_gen = (actions, observations, success.type(torch.bool))
             print(f'num envs: {len(actions)}')
             mean_success = success.mean()
@@ -305,8 +320,9 @@ class NetworkTrainer(nn.Module):
             #TODO:
             #Zurück ändern!
             policy.return_mode = 0
-            actions_opt, observations_opt, success_opt = self.sample_new_episode(policy=policy, env=self.env, episodes=num_envs, add_data=False, her=False)
+            actions_opt, observations_opt, success_opt = self.sample_new_episode(policy=policy, env=self.env, episodes=num_envs, seeds=seeds, add_data=False, her=False)
             data_opt = (actions_opt, observations_opt, success_opt.type(torch.bool))
+            assert torch.equal(observations[0,0], observations_opt[0,0]), "environments changed"
 
             if complete:
                 print('complete:')

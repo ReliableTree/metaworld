@@ -29,6 +29,8 @@ parent_path += '/../../'
 sys.path.append(parent_path)
 from LanguagePolicies.utils.graphsTorch import TBoardGraphsTorch
 from sb3_contrib.tqc.policies import MultiInputPolicy
+from stable_baselines3.common.vec_env import SubprocVecEnv
+from gym.wrappers import TimeLimit
 
 
 global SAMPLED_ENVS
@@ -291,7 +293,9 @@ def benchmark_policy(
     extractor,
     save_model = True, 
     do_draw_gt = False,
+    num_cpu = 4
     ):
+
     tboard = TBoardGraphsTorch(logname=logname, data_path=path)
     transitions = sample_expert_transitions(policy, val_env, eval_epochs)
     trj, observations, rewards   = parse_sampled_transitions(transitions=transitions, new_epoch=new_epoch, extractor=extractor)
@@ -329,7 +333,7 @@ def train_policy(trainer, learn_fct, val_env, logname, path, n_epochs, n_steps, 
     for i in range(n_epochs):
         if step_fct is not None:
             step_id = step_fct(step_id)
-        best_reward = benchmark_policy(
+        '''best_reward = benchmark_policy(
             policy = trainer.policy, 
             path=path, 
             logname=logname, 
@@ -338,7 +342,7 @@ def train_policy(trainer, learn_fct, val_env, logname, path, n_epochs, n_steps, 
             stepid=step_id, 
             best_reward=best_reward,
             new_epoch=new_epoch,
-            extractor=extractor)
+            extractor=extractor)'''
         learn_fct(n_epochs=n_steps)
 
 class LearnWrapper():
@@ -496,6 +500,10 @@ def parse_sampled_transitions(transitions, new_epoch, extractor):
     actions = torch.tensor(np.array(actions), dtype=torch.float)
     observations = torch.cat([*observations], dim=0).type(torch.float)
     rewards = torch.tensor(np.array(rewards), dtype=torch.float)
+    sort_args = torch.argsort(observations[:,0,-1])
+    actions = actions[sort_args]
+    observations = observations[sort_args]
+    rewards = rewards[sort_args]
     return actions, observations, rewards
 
 def sample_expert_transitions(policy, env, episodes):
@@ -552,4 +560,68 @@ def HER_Transitions(transitions, new_epoch:new_epoch_np):
             last_goal = current_obs[-3:]
             begin_epoch_pointer = i
         last_obs = current_obs
+    return result
+
+def make_env(env_constr, seed, epoch_len=100):
+    """
+    Utility function for multiprocessed env.
+
+    :param env_id: (str) the environment ID
+    :param num_env: (int) the number of environments you wish to have in subprocesses
+    :param seed: (int) the inital seed for RNG
+    :param rank: (int) index of the subprocess
+    """
+    def _init():
+        env = TimeLimit(env=env_constr(seed=seed), max_episode_steps=epoch_len)
+        return env
+    return _init
+
+def make_vec_env(num_cpu, seed, env_constr, epoch_len):
+    env_list = []
+    for j in range(num_cpu):
+        seed = int(seed + j)
+        env_list.append(lambda seed=seed: RolloutInfoWrapper((make_env(env_constr=env_constr, seed=seed, epoch_len=epoch_len)())))
+    ve1 = SubprocVecEnv(env_list)
+    return ve1
+
+
+def make_rollouts_vec(seeds, expert, env_constr, num_cpu, epoch_len):
+    iterations = len(seeds)
+    result = None
+    for i in range(iterations):
+        ve = make_vec_env(num_cpu=num_cpu, seed=seeds[i], env_constr=env_constr, epoch_len=epoch_len)
+        transitions = sample_expert_transitions(policy=expert, env=ve, episodes=num_cpu)
+        if result is None:
+            result = transitions
+        else:
+            result = result.__add__(transitions)
+    return result
+
+
+class ImitationLearningWrapper:
+    def __init__(self, policy, env:GymEnv):
+        self.observation_space = env.observation_space
+        self.action_space = env.action_space
+        self.policy = policy
+
+    def predict(self, obsv, deterministic=None):
+        actions = []
+        for obs in obsv:
+            actions.append(self.policy.get_action(obs))
+        return actions
+
+class DummyExtractor:
+    def __init__(self):
+        pass
+    def forward(self, features):
+        if type(features) is np.ndarray:
+            features = torch.tensor(features, dtype=torch.float)
+        return features
+
+def new_epoch(current_obs, check_obsvs):
+    result =  not torch.equal(current_obs.reshape(-1)[-3:], check_obsvs.reshape(-1)[-3:])
+    return result
+
+def new_epoch_np(current_obs, check_obsvs):
+    result =  not np.all(np.equal(current_obs.reshape(-1)[-3:], check_obsvs.reshape(-1)[-3:]))
     return result

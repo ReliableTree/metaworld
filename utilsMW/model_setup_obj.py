@@ -104,3 +104,9 @@ class ActiveCriticArgs:
 
     def set_complete_modulo(self, complete:int):
         self.complete_modulo = complete
+
+    def set_env_factory(self, env_factory):
+        self.env_factory = env_factory
+
+    def set_num_cpu(self, num_cpu:int):
+        self.num_cpu = num_cpu
