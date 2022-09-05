@@ -73,7 +73,7 @@ def sample_expert_transitions(expert, env, n_episodes):
 
 def make_counter_embedding(x, bits):
     mask = 2**torch.arange(bits-1,-1,-1)
-    return x.unsqueeze(-1).bitwise_and(mask).ne(0).byte()
+    return x.unsqueeze(-1).bitwise_and(mask).ne(0).byte().numpy()
 
 def get_integer(x):
     bits = len(x)

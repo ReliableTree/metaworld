@@ -5,6 +5,8 @@ from torch.utils.data import DataLoader
 class TorchDatasetMW(torch.utils.data.Dataset):
     def __init__(self, path = None, device = 'cpu', n=1):
         self.device = device
+        self.data = None
+        self.label = None
         if path is not None:
             path_data = path + 'training_data'
             path_label = path + 'training_label'
@@ -16,8 +18,10 @@ class TorchDatasetMW(torch.utils.data.Dataset):
 
     def __len__(self):
             'Denotes the total number of samples'
-            return len(self.data)
-
+            if self.data is not None:
+                return len(self.data)
+            else:
+                return 0
     def set_data(self, data, label):
         if data.size(1) == 1:
             data = data.repeat([1,self.data.size(1), 1])
@@ -27,13 +31,16 @@ class TorchDatasetMW(torch.utils.data.Dataset):
         print(f'train self.label: {self.label.shape}')
 
     def add_data(self, data, label):
-        if data.size(1) == 1:
-            data = data.repeat([1,self.data.size(1), 1])
+        if self.data is None:
+            self.set_data(data, label)
+        else:
+            if data.size(1) == 1:
+                data = data.repeat([1,self.data.size(1), 1])
 
-        self.data = torch.cat((self.data, data.to(self.device)), dim=0)
-        self.label = torch.cat((self.label, label.to(self.device)), dim=0)
-        print(f'train self.data: {self.data.shape}')
-        print(f'train self.label: {self.label.shape}')
+            self.data = torch.cat((self.data, data.to(self.device)), dim=0)
+            self.label = torch.cat((self.label, label.to(self.device)), dim=0)
+            print(f'train self.data: {self.data.shape}')
+            print(f'train self.label: {self.label.shape}')
 
     def __getitem__(self, index):
             'Generates one sample of data'
@@ -56,28 +63,34 @@ class TorchDatasetMWToy(torch.utils.data.Dataset):
         return self.data[index], self.label[index]
 
 class TorchDatasetTailor(torch.utils.data.Dataset):
-    def __init__(self, trajectories, obsv, success:torch.Tensor, ftrj) -> None:
+    def __init__(self, device = 'cpu') -> None:
         super().__init__()
-        self.success = success.type(torch.bool) 
-        self.trajectories = trajectories
-        self.obsv = obsv
-        self.ftrj = trajectories
-        self.len = len(self.success)
+        self.success = None
+        self.device = device
 
+    def set_data(self, trajectories, obsv, success:torch.Tensor, ftrj):
+        self.success = success.type(torch.bool).to(self.device)
+        self.trajectories = trajectories.to(self.device)
+        self.obsv = obsv.to(self.device)
+        self.ftrj = trajectories.to(self.device)
 
     def add_data(self, trajectories, obsv, success, ftrj):
-        self.success = torch.cat((success.type(torch.bool), self.success), dim=0)
-        self.obsv = torch.cat((obsv, self.obsv), dim=0)
-        self.trajectories = torch.cat((trajectories, self.trajectories), dim=0)
-        self.ftrj = torch.cat((ftrj, self.ftrj), dim=0)
-
-        self.len = len(self.success)
+        if self.success is None:
+            self.set_data(trajectories, obsv, success, ftrj)
+        else:
+            self.success = torch.cat((success.type(torch.bool).to(self.device), self.success), dim=0)
+            self.obsv = torch.cat((obsv.to(self.device), self.obsv), dim=0)
+            self.trajectories = torch.cat((trajectories.to(self.device), self.trajectories), dim=0)
+            self.ftrj = torch.cat((ftrj.to(self.device), self.ftrj), dim=0)
 
     def __len__(self):
-        return self.len
+        if self.success is not None:
+            return len(self.success)
+        else:
+            return 0
 
     def _num_elements(self):
-        return self.len
+        return self.__len__()
 
     def __getitem__(self, index):
         return self.trajectories[index], self.obsv[index], self.success[index], self.ftrj[index]

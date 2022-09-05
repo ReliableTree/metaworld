@@ -53,15 +53,14 @@ class ActiveCritic(nn.Module):
         critics=[TailorTransformer(model_setup=args_obj.network_setup.critic_nn) for i in range(1)]
         self.initial_TT_parameters = critics[0].parameters()
         data = TorchDatasetMW(device=args_obj.device)
-
-        expert_actions, expert_observations, rewards = parse_sampled_transitions(transitions=args_obj.demonstrations, new_epoch=args_obj.new_epoch, extractor=self.extractor)
-        data.set_data(data=expert_observations, label=expert_actions)
-        print(f'len(train_data): {len(data)}')
-        train_loader = DataLoader(data, batch_size=args_obj.batch_size, shuffle=True)
-
         data_eval = TorchDatasetMW(device=args_obj.device)
-        data_eval.set_data(data=expert_observations, label=expert_actions)
-        eval_loader = DataLoader(data_eval, batch_size=args_obj.batch_size, shuffle=True)
+
+        if args_obj.demonstrations is not None:
+            expert_actions, expert_observations, rewards = parse_sampled_transitions(transitions=args_obj.demonstrations, new_epoch=args_obj.new_epoch, extractor=self.extractor)
+            data.set_data(data=expert_observations, label=expert_actions)
+            data_eval.set_data(data=expert_observations, label=expert_actions)
+
+        print(f'len(train_data): {len(data)}')
         
         env_tag = 'pickplace'
         #data_path, logname, lr, mlr, mo_lr, gamma_sl = 0.995, device = 'cuda', tboard=True
@@ -81,7 +80,7 @@ class ActiveCritic(nn.Module):
             tboard=args_obj.tboard,
             network_args_obj=args_obj
             )
-        network.setDatasets(train_loader=train_loader, val_loader=eval_loader)
+        network.setDatasets(train_data=data, val_data=data_eval)
 
         network.setup_model()
         if args_obj.model_path is not None:

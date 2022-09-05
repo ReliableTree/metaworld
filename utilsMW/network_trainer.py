@@ -89,6 +89,14 @@ class NetworkTrainer(nn.Module):
         self.env = env
         self.num_vals = 0
 
+        self.train_data = TorchDatasetMW(device=network_args_obj.device)
+        self.val_data = TorchDatasetMW(device=network_args_obj.device)
+        self.tailor_data = TorchDatasetTailor(device=network_args_obj.device)
+
+        self.train_loader = None
+        self.val_loader = None
+        self.tailor_loader = None
+
 
     def setup_model(self, device = 'cuda'):
         def lfp(result, label):
@@ -108,6 +116,7 @@ class NetworkTrainer(nn.Module):
             tailor_signals=self.tailor_modules,
             lr = self.mo_lr,
             writer=self.write_tboard_scalar,
+            plotter=self.plot_with_mask,
             args_obj=self.network_args)
 
         self.policy.return_mode = 1
@@ -127,15 +136,19 @@ class NetworkTrainer(nn.Module):
             self.trajectories = torch.load(trj_path)
             self.success = torch.load(s_path)
 
-    def setDatasets(self, train_loader:DataLoader, val_loader:DataLoader, batch_size = 32):
-        self.train_loader = train_loader
-        train_ds = train_loader.dataset
-        obsvs = train_ds.data
-        actions = train_ds.label
-        reward = torch.ones(size=[len(obsvs)], dtype=torch.bool, device=actions.device)
-        tailor_data = TorchDatasetTailor(trajectories=actions, obsv=obsvs, success=reward, ftrj=actions)
-        self.tailor_loader = DataLoader(dataset=tailor_data, batch_size=batch_size, shuffle=True)
-        self.val_loader   = val_loader
+    def setDatasets(self, train_data:TorchDatasetMW, val_data:TorchDatasetMW, batch_size = 32):
+        if len(train_data) > 0:
+            self.train_data = train_data
+            self.val_data = val_data
+            self.train_loader = DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True)
+            self.val_loader = DataLoader(dataset=val_data, batch_size=batch_size, shuffle=True)
+            tailor_data = TorchDatasetTailor(device=self.network_args.device)
+            obsvs = train_data.data
+            actions = train_data.label
+            reward = torch.ones(size=[len(obsvs)], dtype=torch.bool, device=actions.device)
+            tailor_data.add_data(trajectories=actions, obsv=obsvs, success=reward, ftrj=actions)
+            self.tailor_data = tailor_data
+            self.tailor_loader = DataLoader(dataset=tailor_data, batch_size=batch_size, shuffle=True)
         
 
     def train_tailor(self, ):
@@ -146,7 +159,7 @@ class NetworkTrainer(nn.Module):
 
 
     def train(self, epochs):
-        self.expert_examples_len = len(self.train_loader.dataset)
+        self.expert_examples_len = len(self.train_data)
         print(f'inital num examples: {self.expert_examples_len}')
         disc_epoch = 0
         disc_step = 0
@@ -160,7 +173,7 @@ class NetworkTrainer(nn.Module):
                 #print("Epoch: {:3d}/{:3d}".format(epoch+1, epochs)) 
                 validation_loss = 0.0
                 train_loss = []
-                if not self.init_train:
+                if not self.init_train or True:
                     self.policy.train()
                     #self.model.eval()
                     loss_module = 1
@@ -186,12 +199,13 @@ class NetworkTrainer(nn.Module):
 
                 
                 self.model.train()
-                model_step += len(self.train_loader.dataset)
-                for step, (d_in, d_out) in enumerate(self.train_loader):
-                    train_loss.append(self.step(d_in, d_out, train=True))
-                    if epoch == 0:
-                        self.total_steps += 1
-                    self.global_step += 1
+                model_step += max(len(self.train_data), len(self.tailor_data))
+                if self.train_loader is not None:
+                    for step, (d_in, d_out) in enumerate(self.train_loader):
+                        train_loss.append(self.step(d_in, d_out, train=True))
+                        if epoch == 0:
+                            self.total_steps += 1
+                        self.global_step += 1
 
                     #self.loadingBar(self.total_steps, self.total_steps, 25, addition="Loss: {:.6f}".format(np.mean(train_loss)), end=True)
             disc_step = 0
@@ -275,7 +289,6 @@ class NetworkTrainer(nn.Module):
     def runValidation(self, quick=False, pnt=True, epoch = 0, save = False, complete = False): 
         self.policy.eval()
         self.model.eval()
-        num_examples = self.tailor_loader.dataset._num_elements()
         #with torch.no_grad():
         if (not quick):
             if complete:
@@ -305,8 +318,11 @@ class NetworkTrainer(nn.Module):
             print(f'mean success before: {mean_success}')
             debug_dict = {'success rate generated' : mean_success}
             self.write_tboard_scalar(debug_dict=debug_dict, train=False)
-            policy.return_mode = 1
-            actions_opt, observations_opt, success_opt = self.sample_new_episode(policy=policy, env=self.env, episodes=num_envs, add_data=False)
+            if self.add_data:
+                policy.return_mode = 1
+                actions_opt, observations_opt, success_opt = self.sample_new_episode(policy=policy, env=self.env, episodes=num_envs, add_data=False)
+            else:
+                actions_opt, observations_opt, success_opt = actions, observations, success
             data_opt = (actions_opt, observations_opt, success_opt.type(torch.bool))
 
             if complete:
@@ -359,16 +375,16 @@ class NetworkTrainer(nn.Module):
                 #self.model.load_state_dict(self.model_state_dict)            
 
         val_loss = []
-        for step, (d_in, d_out) in enumerate(self.val_loader):
-            loss = self.step(d_in, d_out, train=False)
-            val_loss.append(loss)
-            if quick:
-                break
-
+        if self.val_loader is not None:
+            for step, (d_in, d_out) in enumerate(self.val_loader):
+                loss = self.step(d_in, d_out, train=False)
+                val_loss.append(loss)
+                if quick:
+                    break
+        else:
+            val_loss = [0]
         if self.use_tboard:
-            do_dim = d_in[0].size(0)
-            #print(d_in)
-            #self.model.eval()
+
             
             if not quick:
                 success = success.type(torch.bool)
@@ -419,18 +435,21 @@ class NetworkTrainer(nn.Module):
             success_opt = success_opt.to(self.network_args.device)
             ftrjs_opt = ftrjs_opt.to(self.network_args.device)
                 
-            train_data = self.train_loader.dataset
             if success_opt[:episodes].sum() > 0:
                 success_opt = success_opt.type(torch.bool)
-                train_data.add_data(data=inpt_obs_opt[:episodes][success_opt[:episodes]], label=trajectories_opt[:episodes][success_opt[:episodes]])
+                self.train_data.add_data(data=inpt_obs_opt[:episodes][success_opt[:episodes]], label=trajectories_opt[:episodes][success_opt[:episodes]])
                 #self.train_loader = torch.utils.data.DataLoader(train_data, batch_size=32, shuffle=True)
             
-            tailor_data = self.tailor_loader.dataset
-            tailor_data.add_data(trajectories=trajectories_opt, obsv=inpt_obs_opt, success=success_opt, ftrj=ftrjs_opt)
-            self.write_tboard_scalar({'num examples':torch.tensor(len(tailor_data))}, train=False)
-            self.init_train = ~tailor_data.success.sum() == 0
-        print(f'num examples: {self.tailor_loader.dataset._num_elements()}')
-        print(f'num demonstrations: {len(self.train_loader.dataset)}')
+            self.tailor_data.add_data(trajectories=trajectories_opt, obsv=inpt_obs_opt, success=success_opt, ftrj=ftrjs_opt)
+            self.write_tboard_scalar({'num examples':torch.tensor(len(self.tailor_data))}, train=False)
+            self.init_train = ~self.tailor_data.success.sum() == 0
+            self.tailor_loader = DataLoader(self.tailor_data, batch_size=32, shuffle=True)
+            if len(self.train_data)>0:
+                self.train_loader = DataLoader(self.train_data, batch_size=32, shuffle=True)
+            if len(self.val_data)>0:
+                self.val_loader = DataLoader(self.val_data, batch_size=32, shuffle=True)
+        print(f'num examples: {len(self.tailor_data)}')
+        print(f'num demonstrations: {len(self.train_data)}')
 
     def write_tboard_scalar(self, debug_dict, train, step = None):
         if step is None:

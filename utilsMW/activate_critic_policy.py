@@ -1,3 +1,4 @@
+from cProfile import label
 from email.policy import strict
 from turtle import forward
 from unittest import result
@@ -32,6 +33,7 @@ class ActiveCriticPolicy(BaseModel):
         lr, 
         return_mode=0, 
         writer=None, 
+        plotter = None,
         args_obj:ActiveCriticArgs = None
         ):
 
@@ -42,6 +44,7 @@ class ActiveCriticPolicy(BaseModel):
         self.lr = lr
         self.return_mode = return_mode
         self.writer = writer
+        self.plotter = plotter
         self.optim_run = 0
         self.max_steps = args_obj.opt_steps
         self.last_update = 0
@@ -98,19 +101,13 @@ class ActiveCriticPolicy(BaseModel):
 
         vec_obsv = self.args_obj.extractor.forward(observation).unsqueeze(1).to(self.args_obj.device)
 
-        if self.last_goal is not None:
-            if self.args_obj.new_epoch(self.last_goal, vec_obsv):
-                self.current_step = 0
-                #print('new epsiode')
-        if self.current_step == 0:
+        if (self.last_goal is None) or (self.args_obj.new_epoch(self.last_goal, vec_obsv)):
+            self.current_step = 0
             self.last_goal = vec_obsv
-            self.vec_obsv = vec_obsv
-        else:
-            self.vec_obsv = torch.cat((self.vec_obsv, vec_obsv), dim=1)
-        result = self.forward(inpt=self.vec_obsv)['gen_trj'].detach().cpu()[0,-1].numpy()
-            #self.pred_actions = self.forward(inpt=vec_obsv)['gen_trj']
+            self.result = self.forward(inpt=vec_obsv)['gen_trj'].detach().cpu().numpy()
+
         self.current_step += 1
-        return result, -1
+        return self.result[0,self.current_step-1], -1
 
     def forward(self, inpt):
         if type(inpt) is torch.Tensor:
@@ -122,7 +119,7 @@ class ActiveCriticPolicy(BaseModel):
     def _forward(self, inpt):
         main_signal_state_dict= copy.deepcopy(self.main_signal.model.state_dict())
         gen_result = self.main_signal.forward(inpt)['gen_trj']
-        if self.return_mode == 0 or inpt.shape[1] != self.args_obj.epoch_len:
+        if self.return_mode == 0:
             return {'gen_trj': gen_result, 'inpt_trj' : gen_result}
         elif self.return_mode == 1:
             opt_gen_result = torch.clone(gen_result.detach())
@@ -166,6 +163,17 @@ class ActiveCriticPolicy(BaseModel):
                 optimizer.step()
 
                 self.writer({str(self.optim_run) +' in optimisation ':best_expected_mean.detach()}, train=False, step=step)
+                mask = torch.zeros(gen_result.size(0), dtype=torch.bool)
+                mask[0] = True
+
+                self.plotter(
+                    label=gen_result.detach(),
+                    trj=gen_result.detach(),
+                    inpt = inpt,
+                    mask=mask,
+                    opt_trj=best_trj.detach(),
+                    name='in active critic'
+                    )
                 step += 1
             self.main_signal.model.load_state_dict(main_signal_state_dict, strict=False)
             return {
