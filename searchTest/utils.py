@@ -289,6 +289,7 @@ def benchmark_policy(
     best_reward, 
     new_epoch, 
     extractor,
+    num_examples = None,
     save_model = True, 
     do_draw_gt = False,
     ):
@@ -307,7 +308,10 @@ def benchmark_policy(
             os.makedirs(save_path)
 
         torch.save(policy.state_dict(), save_path + '/best_model' + str(reward))
-    tboard.addValidationScalar('reward', reward.detach(), stepid=stepid)
+    tboard.addValidationScalar('success rate generated', reward.detach(), stepid=stepid)
+    if num_examples is not None:
+        tboard.addValidationScalar('num examples', num_examples, stepid=stepid)
+
     if do_draw_gt:
         draw_gt(val_env=val_env, tboard=tboard, stepid=stepid)
     else:
