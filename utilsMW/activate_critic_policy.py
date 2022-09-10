@@ -96,8 +96,8 @@ class ActiveCriticPolicy(BaseModel):
         deterministic: bool = False,
     ) -> torch.Tensor:
 
-        vec_obsv = self.args_obj.extractor.forward(observation).unsqueeze(1).to(self.args_obj.device)
-
+        vec_obsv = self.args_obj.extractor.forward(observation).to(self.args_obj.device)
+        print(f'vec obsv: {vec_obsv.shape}')
         if self.last_goal is not None:
             if self.args_obj.new_epoch(self.last_goal, vec_obsv):
                 self.current_step = 0

@@ -220,7 +220,7 @@ class NetworkTrainer(nn.Module):
         #num_cpu, env_constr, epoch_len, seed        
         transitions = make_rollouts_vec(seeds=seeds, expert=policy, env_constr=self.env, num_cpu=num_cpu, epoch_len=self.network_args.epoch_len)
 
-        transitions = sample_expert_transitions(policy, self.env(), episodes)
+        #transitions = sample_expert_transitions(policy, self.env(), episodes)
         if her:
             transitions = HER_Transitions(transitions=transitions, new_epoch=new_epoch_np)
         datas  = parse_sampled_transitions(transitions=transitions, new_epoch=self.network_args.new_epoch, extractor=self.extractor)
@@ -309,7 +309,7 @@ class NetworkTrainer(nn.Module):
             policy.return_mode = 0
             num_seeds = 1+num_envs//self.network_args.num_cpu
             seeds = np.random.randint(0, 1e10, num_seeds)
-            actions, observations, success = self.sample_new_episode(policy=policy, env=self.env, episodes=num_envs, seeds=seeds, add_data=False, her=False)
+            actions, observations, success = self.sample_new_episode(policy=policy, episodes=num_envs, seeds=seeds, add_data=False, her=False)
             data_gen = (actions, observations, success.type(torch.bool))
             print(f'num envs: {len(actions)}')
             mean_success = success.mean()
