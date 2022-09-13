@@ -6,7 +6,7 @@ parent_path += '/../'
 sys.path.append(parent_path)
 parent_path += '/MasterProject/'
 sys.path.append(parent_path)
-from LanguagePolicies.model_src.modelTorch import PolicyTranslationModelTorch
+from LanguagePolicies.model_src.modelTorch import WholeSequenceActor
 from LanguagePolicies.utils.networkMeta import NetworkMeta
 import hashids
 import time
@@ -59,7 +59,7 @@ def count_parameters(model):
     return total_params
 
 def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, tboard, model_setup, train_size = 1):
-    model   = PolicyTranslationModelTorch(od_path="", model_setup=model_setup, device=device).to(device)
+    model   = WholeSequenceActor(od_path="", model_setup=model_setup, device=device).to(device)
 
     
     #tailor_models=[]

@@ -20,7 +20,7 @@ from MetaWorld.utilsMW.model_setup import model_setup
 from MetaWorld.utilsMW.dataLoaderMW import TorchDatasetMWToy
 from MetaWorld.utilsMW.makeTrainingData import ToySimulation
 from MetaWorld.searchTest.toyEnvironment import check_outpt
-from LanguagePolicies.model_src.modelTorch import PolicyTranslationModelTorch
+from LanguagePolicies.model_src.modelTorch import WholeSequenceActor
 from LanguagePolicies.utils.Transformer import TailorTransformer
 from LanguagePolicies.utils.networkMeta import NetworkMeta
 
@@ -80,7 +80,7 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
         break
     model_setup['plan_nn']['plan']['d_output'] = dim_out
     model_setup['plan_nn']['plan']['seq_len'] = seq_len
-    model   = PolicyTranslationModelTorch(od_path="", model_setup=model_setup, device=device).to(device)
+    model   = WholeSequenceActor(od_path="", model_setup=model_setup, device=device).to(device)
     for inpt, outpt in train_loader:
         result = model(inpt)
         break

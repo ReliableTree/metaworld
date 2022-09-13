@@ -1,11 +1,14 @@
 from pyclbr import Function
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
-from typing import Optional
+from typing import Optional, Union
+
+from PyTorchRL.utils import torch
+from LanguagePolicies.model_src.modelTorch import WholeSequenceActor, WholeSequenceCritic, WholeSequenceModel
 
 
 class NetworkSetup:
     def __init__(self) -> None:
-        self.plan_nn = ModelSetup()
+        self.actor_nn = ModelSetup()
         self.critic_nn = ModelSetup()
 
         self.critic_nn.use_layernorm = False
@@ -19,9 +22,9 @@ class NetworkSetup:
         self.critic_nn.nlayers = 4
         self.critic_nn.d_result = 1
         self.critic_nn.seq_len = 100
+        self.critic_nn.optimizer_class = torch.optim.Adam
+        self.model_class:WholeSequenceModel = WholeSequenceCritic
         
-        self.quick_val = False
-        self.val_every = 30000
 
 
 class ModelSetup:
@@ -40,17 +43,25 @@ class ModelSetup:
         self.d_result = None
         self.ntoken = -1
         self.dropout = 0.2
+        self.lr = None
+        self.device = 'cuda'
+        self.optimizer_class = torch.optim.AdamW
+        self.optimizer_kwargs = {}
+        self.model_class:WholeSequenceModel = WholeSequenceActor
         
 class ActiveCriticArgs:
     def __init__(self) -> None:
-        self.all_set = False
+        pass
 
+    def set_quick_eval_epochs(self, quick_eval_epochs:int):
+        self.quick_eval_epochs = quick_eval_epochs
+    
     def set_network_setup(self, network_setup:NetworkSetup):
         self.network_setup = network_setup
 
     def set_epoch_len(self, epoch_len:int):
         self.network_setup.critic_nn.seq_len = epoch_len
-        self.network_setup.plan_nn.seq_len = epoch_len
+        self.network_setup.actor_nn.seq_len = epoch_len
         self.epoch_len = epoch_len
 
     def set_new_epoch(self, new_epoch:Function):
@@ -73,13 +84,18 @@ class ActiveCriticArgs:
         self.mlr = mlr
 
     def set_meta_optimizer_lr(self, mo_lr:float):
-        self.meta_optimizer_lr = mo_lr
+        self.network_setup.critic_nn.lr = mo_lr
+
+    def set_lr(self, lr:float):
+        self.network_setup.actor_nn.lr = lr
 
     def set_demonstrations(self, demonstrations:list):
         self.demonstrations = demonstrations
 
     def set_device(self, device:str):
         self.device = device
+        self.network_setup.actor_nn.device = device
+        self.network_setup.critic_nn.device = device
 
     def set_tboard(self, tboard:bool):
         self.tboard = tboard
@@ -104,3 +120,6 @@ class ActiveCriticArgs:
 
     def set_complete_modulo(self, complete:int):
         self.complete_modulo = complete
+
+    def set_observable(self, observable:bool):
+        self.observable = observable

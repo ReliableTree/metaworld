@@ -527,3 +527,29 @@ def count_parameters(model):
     print(table)
     print(f"Total Trainable Params: {total_params}")
     return total_params
+
+import torch as th
+
+def make_partially_observed_seq(obs:th.Tensor, acts:th.Tensor, seq_len:int, act_space):
+    result = th.zeros(size=[obs.shape[0], seq_len, obs.shape[-1]+ act_space.shape[0]], device=obs.device)
+    #obs: batch, seq, dim
+    result = fill_tensor(result, obs, start_dim=0)
+    if acts is not None:
+        result = fill_tensor(result, acts, start_dim=obs.shape[-1])
+    return result, obs.shape[-1]
+
+def fill_tensor(tensorA:torch.Tensor, tensorB:torch.Tensor, start_dim:int):
+    shape = tensorB.shape
+    tensorA[:shape[0], :shape[1], start_dim:start_dim+shape[2]] = tensorB
+    return tensorA
+
+def add_max_val_to_dict(dict, key, val, tm):
+    if key in dict:
+        dict[key] = torch.max(dict[key], val)
+        if val > dict[key]:
+            dict[key + ' max'] = torch.tensor(tm)
+    else:
+        dict[key] = val
+
+def calcMSE(a, b):
+    return ((a.squeeze() - b.squeeze())**2).mean()

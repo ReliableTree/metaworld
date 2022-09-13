@@ -1,0 +1,185 @@
+import copy
+from locale import currency
+from typing import Dict, List, Optional, Tuple, Union
+from unittest import result
+
+import numpy as np
+import torch
+from MetaWorld.searchTest.utils import make_partially_observed_seq
+from MetaWorld.utilsMW.model_setup_obj import ActiveCriticArgs
+from stable_baselines3.common.policies import BaseModel
+from LanguagePolicies.model_src.modelTorch import WholeSequenceActor, WholeSequenceCritic
+
+
+class ACPOptResult:
+    def __init__(self, gen_trj: torch.Tensor, inpt_trj: torch.Tensor = None, expected_succes_before: torch.Tensor = None, expected_succes_after: torch.Tensor = None) -> None:
+        self.gen_trj = gen_trj
+        self.inpt_trj = inpt_trj
+        self.expected_succes_before = expected_succes_before
+        self.expected_succes_after = expected_succes_after
+
+
+class ActiveCriticPolicy(BaseModel):
+    def __init__(
+        self,
+        observation_space,
+        action_space,
+        actor: WholeSequenceActor,
+        critic: WholeSequenceCritic,
+        lr=None,
+        return_mode=0,
+        writer=None,
+        plotter=None,
+        args_obj: ActiveCriticArgs = None
+    ):
+
+        super().__init__(observation_space, action_space)
+
+        self.actor = actor
+        self.critic = critic
+        self.return_mode = return_mode
+        self.writer = writer
+        self.plotter = plotter
+        self.optim_run = 0
+        self.max_steps = args_obj.opt_steps
+        self.last_update = 0
+        self.last_goal = None
+        self.seq_len = None
+        self.current_step = 0
+        self.args_obj = args_obj
+
+    def predict(
+        self,
+        observation: Union[np.ndarray, Dict[str, np.ndarray]],
+        state: Optional[Tuple[np.ndarray, ...]] = None,
+        episode_start: Optional[np.ndarray] = None,
+        deterministic: bool = False,
+    ) -> torch.Tensor:
+        if self.args_obj.observable:
+            return self.predict_observable(observation, state, episode_start, deterministic)
+        else:
+            return self.predict_unobservable(observation, state, episode_start, deterministic)
+
+    def predict_observable(
+        self,
+        observation: Union[torch.Tensor, Dict[str, torch.Tensor]],
+        state: Optional[Tuple[np.ndarray, ...]] = None,
+        episode_start: Optional[np.ndarray] = None,
+        deterministic: bool = False,
+    ) -> torch.Tensor:
+        vec_obsv = self.args_obj.extractor.forward(
+            observation).unsqueeze(1).to(self.args_obj.device)
+
+        if (self.last_goal is None) or (self.args_obj.new_epoch(self.last_goal, vec_obsv)):
+            self.current_step = 0
+            self.last_goal = vec_obsv
+            self.action_seq = None
+            self.obs_seq = vec_obsv
+        else:
+            self.obs_seq = torch.cat((self.obs_seq, vec_obsv), dim=1)
+            self.current_step += 1
+        model_inpt, self.act_dim = make_partially_observed_seq(
+            obs=self.obs_seq, acts=self.action_seq, seq_len=self.args_obj.epoch_len, act_space=self.action_space)
+        self.action_seq = self.forward(
+            inpt=model_inpt).gen_trj.detach()
+        print(f'current step: {self.current_step}')
+        return self.action_seq[:, self.current_step].cpu().numpy()
+
+    def predict_unobservable(
+        self,
+        observation: Union[np.ndarray, Dict[str, np.ndarray]],
+        state: Optional[Tuple[np.ndarray, ...]] = None,
+        episode_start: Optional[np.ndarray] = None,
+        deterministic: bool = False,
+    ) -> torch.Tensor:
+        vec_obsv = self.args_obj.extractor.forward(
+            observation).unsqueeze(1).to(self.args_obj.device)
+
+        if (self.last_goal is None) or (self.args_obj.new_epoch(self.last_goal, vec_obsv)):
+            self.current_step = 0
+            self.last_goal = vec_obsv
+            self.result = self.forward(inpt=vec_obsv)[
+                'gen_trj'].detach().cpu().numpy()
+        else:
+            self.current_step += 1
+        return self.result[0, self.current_step], -1
+
+    def forward(self, inpt):
+        if type(inpt) is torch.Tensor:
+            return self._forward(inpt)
+        else:
+            return self.predict(observation=inpt)
+
+    def _forward(self, inpt):
+        main_signal_state_dict = copy.deepcopy(
+            self.actor.model.state_dict())
+        gen_result = self.actor.forward(inpt).gen_trj
+        if self.return_mode == 0:
+            result = ACPOptResult(gen_trj=gen_result)
+            return result
+        elif self.return_mode == 1:
+            opt_gen_result = torch.clone(gen_result.detach())
+            opt_gen_result.requires_grad_(True)
+
+            optimizer = torch.optim.Adam([opt_gen_result], lr=self.lr)
+            best_expected_success = None
+            best_expected_mean = 0
+            best_trj = torch.clone(gen_result)
+            step = 0
+            if self.critic.model is not None:
+                self.critic.model.eval()
+            gen_result = gen_result.detach()
+            while best_expected_mean < 0.95 and (step <= self.max_steps):
+
+                critic_input, _ = make_partially_observed_seq(
+                    obs=self.obs_seq, acts=opt_gen_result, seq_len=self.args_obj.epoch_len, act_space=self.action_space)
+
+                critic_result = self.critic.forward(inputs=critic_input)
+
+                goal_label = torch.ones_like(critic_result)
+                critic_loss = self.critic.loss_fct(
+                    inpt=critic_result, success=goal_label)
+
+                if best_expected_success is None:
+                    best_expected_success = torch.clone(critic_result)
+                    best_trj = opt_gen_result.detach()
+                    expected_succes_before = torch.clone(critic_result)
+                else:
+                    improve_mask = (critic_result >
+                                    best_expected_success).reshape(-1)
+                    best_expected_success[improve_mask] = critic_result[improve_mask].detach(
+                    )
+                    best_trj[improve_mask] = opt_gen_result[improve_mask].detach()
+
+                best_expected_mean = best_expected_success.mean()
+
+                optimizer.zero_grad()
+                critic_loss.backward()
+                optimizer.step()
+
+                with torch.no_grad():
+                    opt_gen_result[:, :self.current_step,
+                                   :] = gen_result[:, :self.current_step, :]
+
+                assert torch.equal(opt_gen_result[:, :self.current_step, :],
+                                   gen_result[:, :self.current_step, :]), 'previous actions changed'
+                assert not torch.equal(
+                    opt_gen_result, gen_result), 'nothing changed'
+
+                self.writer(
+                    {str(self.optim_run) + ' in optimisation ': best_expected_mean.detach()}, train=False, step=step)
+                mask = torch.zeros(gen_result.size(0), dtype=torch.bool)
+                mask[0] = True
+
+                self.plotter(
+                    label=gen_result.detach(),
+                    trj=gen_result.detach(),
+                    inpt=inpt,
+                    mask=mask,
+                    opt_trj=best_trj.detach(),
+                    name='in active critic'
+                )
+                step += 1
+            self.actor.model.load_state_dict(
+                main_signal_state_dict, strict=False)
+            return ACPOptResult(gen_trj=best_trj.detach(), inpt_trj=gen_result.detach(), expected_succes_before=expected_succes_before, expected_succes_after=best_expected_mean)
