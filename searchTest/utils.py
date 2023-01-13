@@ -1,5 +1,8 @@
 # @author Simon Stepputtis <sstepput@asu.edu>, Interactive Robotics Lab, Arizona State University
-#matplotlib.use("TkAgg")
+# matplotlib.use("TkAgg")
+from prettytable import PrettyTable
+from sb3_contrib.tqc.policies import MultiInputPolicy
+from LanguagePolicies.utils.graphsTorch import TBoardGraphsTorch
 from cmath import inf
 from mimetypes import init
 from select import select
@@ -8,7 +11,8 @@ import tensorflow as tf
 import numpy as np
 from hashids import Hashids
 import os
-import torch
+import torch as th
+
 try:
     from imitation.data import rollout
     from imitation.data.wrappers import RolloutInfoWrapper
@@ -27,8 +31,6 @@ from pathlib import Path
 parent_path = str(Path(__file__).parent.absolute())
 parent_path += '/../../'
 sys.path.append(parent_path)
-from LanguagePolicies.utils.graphsTorch import TBoardGraphsTorch
-from sb3_contrib.tqc.policies import MultiInputPolicy
 
 
 global SAMPLED_ENVS
@@ -46,21 +48,26 @@ def simulate(policy, n, val_env):
             obs, reward, done, _ = val_env.step(action=action)
 
         rew.append(reward)
-    reward = torch.tensor(rew).type(torch.float).mean()
+    reward = th.tensor(rew).type(th.float).mean()
     return reward
 
-from prettytable import PrettyTable
+
+# Done
+
+
 def count_parameters(model):
     table = PrettyTable(["Modules", "Parameters"])
     total_params = 0
     for name, parameter in model.named_parameters():
-        if not parameter.requires_grad: continue
+        if not parameter.requires_grad:
+            continue
         param = parameter.numel()
         table.add_row([name, param])
-        total_params+=param
+        total_params += param
     print(table)
     print(f"Total Trainable Params: {total_params}")
     return total_params
+
 
 def sample_expert_transitions(expert, env, n_episodes):
     print("Sampling expert transitions.")
@@ -71,18 +78,28 @@ def sample_expert_transitions(expert, env, n_episodes):
     )
     return rollout.flatten_trajectories(rollouts)
 
+# done
+
+
 def make_counter_embedding(x, bits):
-    mask = 2**torch.arange(bits-1,-1,-1)
+    mask = 2**th.arange(bits-1, -1, -1)
     return x.unsqueeze(-1).bitwise_and(mask).ne(0).byte().numpy()
+
+# done
+
 
 def get_integer(x):
     bits = len(x)
-    mask = 2**torch.arange(bits-1,-1,-1)
+    mask = 2**th.arange(bits-1, -1, -1)
     integer = (x*mask).sum()
     return int(integer)
 
+# done
+
+
 def get_num_bits(interger):
-    return int(torch.ceil(torch.log2(torch.tensor(interger))))
+    return int(th.ceil(th.log2(th.tensor(interger))))
+
 
 def make_obs_act_space(data, label):
     trj_len = label.size(1)
@@ -95,10 +112,12 @@ def make_obs_act_space(data, label):
     action_high = [1]*action_dim
     print(f'obs: {obs_dim}')
     print(f'action_dim: {action_dim}')
-    
-    observation_space = gym.spaces.box.Box(np.array(obs_array_low), np.array(obs_array_high), (obs_dim,), float)
-    #next state (4)
-    action_space = gym.spaces.box.Box(np.array(action_low), np.array(action_high), (action_dim,), float)
+
+    observation_space = gym.spaces.box.Box(
+        np.array(obs_array_low), np.array(obs_array_high), (obs_dim,), float)
+    # next state (4)
+    action_space = gym.spaces.box.Box(
+        np.array(action_low), np.array(action_high), (action_dim,), float)
     return observation_space, action_space
 
 
@@ -114,12 +133,14 @@ class MyEnv():
     def __init__(self, data=None):
         if data is None:
             data = MyEnv.train_data
-        self.metadata = {'render.modes': ['human', 'rgb_array'], 'video.frames_per_second': 50}
+        self.metadata = {'render.modes': [
+            'human', 'rgb_array'], 'video.frames_per_second': 50}
         self.steps = 0
         self.current_env = -1
         self.data = data.data
         self.label = data.label
-        self.observation_space, self.action_space = make_obs_act_space(self.data, self.label)
+        self.observation_space, self.action_space = make_obs_act_space(
+            self.data, self.label)
         self.traj = None
         self.num_envs = 1
         self.sampled_envs = 0
@@ -134,58 +155,63 @@ class MyEnv():
             SAMPLED_ENVS += 1
         self.sampled_envs = SAMPLED_ENVS
         self.traj = None
-        self.current_env = (self.current_env + 1)%len(self.data)
+        self.current_env = (self.current_env + 1) % len(self.data)
         self.steps = 0
-        last_action = torch.zeros(4, dtype=float, device=self.data.device)
+        last_action = th.zeros(4, dtype=float, device=self.data.device)
         trj_len = self.label.size(1)
         bits = get_num_bits(trj_len)
         #print(f'bits: {bits}')
-        step = make_counter_embedding(torch.tensor(self.steps, device=self.data.device), bits)
+        step = make_counter_embedding(
+            th.tensor(self.steps, device=self.data.device), bits)
         if not MyEnv.show_step:
-            step = torch.zeros_like(step)
+            step = th.zeros_like(step)
         data = self.data[self.current_env, 0]
-        state = torch.cat((step.reshape(-1), data, last_action), dim=0).type(torch.float).numpy()
+        state = th.cat((step.reshape(-1), data, last_action),
+                       dim=0).type(th.float).numpy()
         return state
-        
 
     def step(self, action):
         if type(action) is np.ndarray:
-            action = torch.tensor(action, device=self.data.device)
+            action = th.tensor(action, device=self.data.device)
         if self.traj is None:
-            self.traj = action.reshape(1,-1)
+            self.traj = action.reshape(1, -1)
         else:
-            self.traj = torch.cat((self.traj, action.reshape(1,-1)), dim=0)
+            self.traj = th.cat((self.traj, action.reshape(1, -1)), dim=0)
 
         self.steps += 1
         trj_len = self.label.size(1)
         bits = get_num_bits(trj_len)
-        step = make_counter_embedding(torch.tensor(self.steps, device=self.data.device), bits)
+        step = make_counter_embedding(
+            th.tensor(self.steps, device=self.data.device), bits)
         #print(f'step: {step}')
         if not MyEnv.show_step:
-            step = torch.zeros_like(step)
+            step = th.zeros_like(step)
         data = self.data[self.current_env, 0]
-        state = torch.cat((step.reshape(-1), data, action.reshape(-1)), dim=0).type(torch.float).numpy()
+        state = th.cat((step.reshape(-1), data, action.reshape(-1)),
+                       dim=0).type(th.float).numpy()
         if self.steps >= self.label.size(1):
-            tol_neg = MyEnv.tol_neg*torch.ones([self.traj.size(-1)])
-            tol_pos = MyEnv.tol_pos*torch.ones([self.traj.size(-1)])
+            tol_neg = MyEnv.tol_neg*th.ones([self.traj.size(-1)])
+            tol_pos = MyEnv.tol_pos*th.ones([self.traj.size(-1)])
             window = MyEnv.window
-            reward = float(check_outpt(self.label[self.current_env].unsqueeze(0), self.traj.unsqueeze(0), tol_neg=tol_neg, tol_pos=tol_pos, window=window))
+            reward = float(check_outpt(self.label[self.current_env].unsqueeze(
+                0), self.traj.unsqueeze(0), tol_neg=tol_neg, tol_pos=tol_pos, window=window))
             return (state, reward, True, {})
         else:
             return (state, 0., False, {})
 
     def close(self):
         pass
-    
+
     def render(self, mode):
         pass
+
 
 class ToyExpertModel(OnPolicyAlgorithm):
     @staticmethod
     def set_datasets(train_data, val_data):
         ToyExpertModel.train_data = train_data
         ToyExpertModel.val_data = val_data
-        
+
         env_id_train = dict()
         env_id_val = dict()
         for i, data in enumerate(train_data):
@@ -196,33 +222,33 @@ class ToyExpertModel(OnPolicyAlgorithm):
         ToyExpertModel.env_id_val = env_id_val
 
     def __init__(
-            self,
-            policy: Union[str, Type[ActorCriticPolicy]] = 'MlpPolicy',
-            env: Union[GymEnv, str] = None,
-            learning_rate = 3e-4,
-            n_steps: int = 2048,
-            batch_size: int = 64,
-            n_epochs: int = 10,
-            gamma: float = 0.99,
-            gae_lambda: float = 0.95,
-            clip_range = 0.2,
-            clip_range_vf = None,
-            normalize_advantage: bool = True,
-            ent_coef: float = 0.0,
-            vf_coef: float = 0.5,
-            max_grad_norm: float = 0.5,
-            use_sde: bool = False,
-            sde_sample_freq: int = -1,
-            target_kl: Optional[float] = None,
-            tensorboard_log: Optional[str] = None,
-            create_eval_env: bool = False,
-            policy_kwargs: Optional[Dict[str, Any]] = None,
-            verbose: int = 0,
-            seed: Optional[int] = None,
-            device: Union[torch.device, str] = "auto",
-            _init_setup_model: bool = True,
-            train_data = None
-        ):
+        self,
+        policy: Union[str, Type[ActorCriticPolicy]] = 'MlpPolicy',
+        env: Union[GymEnv, str] = None,
+        learning_rate=3e-4,
+        n_steps: int = 2048,
+        batch_size: int = 64,
+        n_epochs: int = 10,
+        gamma: float = 0.99,
+        gae_lambda: float = 0.95,
+        clip_range=0.2,
+        clip_range_vf=None,
+        normalize_advantage: bool = True,
+        ent_coef: float = 0.0,
+        vf_coef: float = 0.5,
+        max_grad_norm: float = 0.5,
+        use_sde: bool = False,
+        sde_sample_freq: int = -1,
+        target_kl: Optional[float] = None,
+        tensorboard_log: Optional[str] = None,
+        create_eval_env: bool = False,
+        policy_kwargs: Optional[Dict[str, Any]] = None,
+        verbose: int = 0,
+        seed: Optional[int] = None,
+        device: Union[th.device, str] = "auto",
+        _init_setup_model: bool = True,
+        train_data=None
+    ):
         super().__init__(
             policy,
             env,
@@ -245,14 +271,15 @@ class ToyExpertModel(OnPolicyAlgorithm):
         )
         self.data = train_data.data
         self.label = train_data.label
-        self.observation_space, self.action_space = make_obs_act_space(self.data, self.label)
+        self.observation_space, self.action_space = make_obs_act_space(
+            self.data, self.label)
         self.policy = self
 
     def predict(self, obs, state=None, episode_start=None, deterministic=False):
         trj_len = self.label.size(1)
         bits = get_num_bits(trj_len)
 
-        obs = torch.tensor(obs).reshape(-1)
+        obs = th.tensor(obs).reshape(-1)
         step = get_integer(obs[:bits])
 
         env_key = str(obs.reshape(-1)[bits:bits+4].tolist())
@@ -261,54 +288,58 @@ class ToyExpertModel(OnPolicyAlgorithm):
             result = ToyExpertModel.train_data.label[env, step].reshape(1, -1)
         except:
             env = ToyExpertModel.env_id_val[env_key]
-            result = ToyExpertModel.val_data.label[env, step].reshape(1, -1).type(torch.float)
+            result = ToyExpertModel.val_data.label[env, step].reshape(
+                1, -1).type(th.float)
 
         return result, result
+
 
 def draw_gt(val_env, tboard, stepid):
     target_trj = val_env.label[val_env.current_env]
     gen_trj = val_env.traj
     inpt = val_env.data[val_env.current_env][0]
 
-    tol_neg = val_env.tol_neg*torch.ones([val_env.traj.size(-1)])
-    tol_pos = val_env.tol_pos*torch.ones([val_env.traj.size(-1)])
+    tol_neg = val_env.tol_neg*th.ones([val_env.traj.size(-1)])
+    tol_pos = val_env.tol_pos*th.ones([val_env.traj.size(-1)])
     window = val_env.window
 
-    tboard.plotDMPTrajectory(target_trj, gen_trj, torch.zeros_like(gen_trj),
-                                None, None, None, stepid=stepid, save=False, name_plot='imitation baseline', path='',\
-                                    tol_neg=tol_neg, tol_pos=tol_pos, inpt = inpt, name='imitation baseline', opt_gen_trj = None, window=window)
+    tboard.plotDMPTrajectory(target_trj, gen_trj, th.zeros_like(gen_trj),
+                             None, None, None, stepid=stepid, save=False, name_plot='imitation baseline', path='',
+                             tol_neg=tol_neg, tol_pos=tol_pos, inpt=inpt, name='imitation baseline', opt_gen_trj=None, window=window)
 
 
 def benchmark_policy(
-    policy, 
-    path, 
-    logname, 
-    eval_epochs, 
-    val_env, 
-    stepid, 
-    best_reward, 
-    new_epoch, 
+    policy,
+    path,
+    logname,
+    eval_epochs,
+    val_env,
+    stepid,
+    best_reward,
+    new_epoch,
     extractor,
-    num_examples = None,
-    save_model = True, 
-    do_draw_gt = False,
-    ):
+    num_examples=None,
+    save_model=True,
+    do_draw_gt=False,
+):
     tboard = TBoardGraphsTorch(logname=logname, data_path=path)
     transitions = sample_expert_transitions(policy, val_env, eval_epochs)
-    trj, observations, rewards   = parse_sampled_transitions(transitions=transitions, new_epoch=new_epoch, extractor=extractor)
-    reward = rewards.type(torch.float).mean()
+    trj, observations, rewards = parse_sampled_transitions(
+        transitions=transitions, new_epoch=new_epoch, extractor=extractor)
+    reward = rewards.type(th.float).mean()
     print(f'in trainer reward: {reward}')
 
     if len(trj.shape) == 1:
-        trj = trj.reshape(-1,1)
+        trj = trj.reshape(-1, 1)
     if reward >= best_reward and save_model:
         best_reward = reward
         save_path = path + logname
         if not os.path.exists(save_path):
             os.makedirs(save_path)
 
-        torch.save(policy.state_dict(), save_path + '/best_model' + str(reward))
-    tboard.addValidationScalar('success rate generated', reward.detach(), stepid=stepid)
+        th.save(policy.state_dict(), save_path + '/best_model' + str(reward))
+    tboard.addValidationScalar(
+        'success rate generated', reward.detach(), stepid=stepid)
     if num_examples is not None:
         tboard.addValidationScalar('num examples', num_examples, stepid=stepid)
 
@@ -319,11 +350,12 @@ def benchmark_policy(
         if len(trj.shape) == 2:
             trj = trj.unsqueeze(0)
         print(trj.shape)
-        tboard.plotDMPTrajectory(trj[0], trj[0], torch.zeros_like(trj[0]),
-                            None, None, None, stepid=stepid, save=False, name_plot='logname')
+        tboard.plotDMPTrajectory(trj[0], trj[0], th.zeros_like(trj[0]),
+                                 None, None, None, stepid=stepid, save=False, name_plot='logname')
     return reward
 
-def train_policy(trainer, learn_fct, val_env, logname, path, n_epochs, n_steps, new_epoch, extractor, eval_epochs = 100, step_fct = None):
+
+def train_policy(trainer, learn_fct, val_env, logname, path, n_epochs, n_steps, new_epoch, extractor, eval_epochs=100, step_fct=None):
     if step_fct is None:
         global SAMPLED_ENVS
         step_id = SAMPLED_ENVS
@@ -334,31 +366,35 @@ def train_policy(trainer, learn_fct, val_env, logname, path, n_epochs, n_steps, 
         if step_fct is not None:
             step_id = step_fct(step_id)
         best_reward = benchmark_policy(
-            policy = trainer.policy, 
-            path=path, 
-            logname=logname, 
-            eval_epochs=eval_epochs, 
-            val_env=val_env, 
-            stepid=step_id, 
+            policy=trainer.policy,
+            path=path,
+            logname=logname,
+            eval_epochs=eval_epochs,
+            val_env=val_env,
+            stepid=step_id,
             best_reward=best_reward,
             new_epoch=new_epoch,
             extractor=extractor)
         learn_fct(n_epochs=n_steps)
 
+
 class LearnWrapper():
     def __init__(self, trainer):
         self.trainer = trainer
-    
+
     def train(self, n_epochs):
         self.trainer.learn(total_timesteps=n_epochs, log_interval=140000)
 
+
 NUM_RESETS = 0
+
+
 class SuperMyGymWrapper():
     def __init__(self, tag=None, bo=None) -> None:
         self.tag = tag
-        self.bo=bo
+        self.bo = bo
 
-    def make_wrapper(self, count_resets = True):
+    def make_wrapper(self, count_resets=True):
 
         if self.bo is None:
             bo = gym.make(self.tag)
@@ -368,8 +404,8 @@ class SuperMyGymWrapper():
         class MyGymWrapper(bo.__class__):
             def __init__(self, baseObject, count_resets):
                 self.__class__ = type(baseObject.__class__.__name__,
-                                    (self.__class__, baseObject.__class__),
-                                    {})
+                                      (self.__class__, baseObject.__class__),
+                                      {})
                 self.__dict__ = baseObject.__dict__
                 self.count_resets = count_resets
 
@@ -392,16 +428,16 @@ class SuperMyGymWrapper():
                 global NUM_RESETS
                 return NUM_RESETS
 
-            
         mgw = MyGymWrapper(baseObject=bo, count_resets=count_resets)
-        return mgw     
+        return mgw
+
 
 class supermipWrapper():
     def __init__(self, tag, bo=None) -> None:
         self.tag = tag
-        self.bo=bo
+        self.bo = bo
 
-    def make_wrapper(self, count_resets = True):
+    def make_wrapper(self, count_resets=True):
 
         if self.bo is None:
             bo = gym.make(self.tag)
@@ -411,8 +447,8 @@ class supermipWrapper():
         class MyGymWrapper(bo.__class__):
             def __init__(self, baseObject, count_resets):
                 self.__class__ = type(baseObject.__class__.__name__,
-                                    (self.__class__, baseObject.__class__),
-                                    {})
+                                      (self.__class__, baseObject.__class__),
+                                      {})
                 self.__dict__ = baseObject.__dict__
                 self.count_resets = count_resets
 
@@ -436,14 +472,14 @@ class supermipWrapper():
                     obsvs.append(obsv_dict)
                 return obsvs
 
-
             def step(self, action):
                 obsv, rew, done, info = super().step(action)
                 obsv = self._rebuild_obsv(obsv=obsv, info=info)
                 return obsv, rew, done, info
 
         mgw = MyGymWrapper(baseObject=bo, count_resets=count_resets)
-        return mgw       
+        return mgw
+
 
 class my_dummy_wrapper:
     def __init__(self, tag) -> None:
@@ -452,17 +488,20 @@ class my_dummy_wrapper:
     def get_env(self):
         return gym.make(self.tag)
 
+
 class VecExtractor:
     def __init__(self, feature_extractor, env) -> None:
-        self.dummy_model = MultiInputPolicy(observation_space=env.observation_space, action_space=env.action_space, features_extractor_class=feature_extractor, lr_schedule=lambda a:1)
+        self.dummy_model = MultiInputPolicy(observation_space=env.observation_space, action_space=env.action_space,
+                                            features_extractor_class=feature_extractor, lr_schedule=lambda a: 1)
         self.extractor = feature_extractor(env.observation_space)
-        
+
     def forward(self, features):
         if type(features) is tuple:
             features = features[0]
         current_obs, _ = self.dummy_model.obs_to_tensor(features)
-        current_obs = self.extractor(current_obs)  
-        return current_obs.type(torch.float)
+        current_obs = self.extractor(current_obs)
+        return current_obs.type(th.float)
+
 
 def parse_sampled_transitions(transitions, new_epoch, extractor):
     observations = []
@@ -477,12 +516,13 @@ def parse_sampled_transitions(transitions, new_epoch, extractor):
         if new_epoch(current_obs, check_obsvs):
             rewards.append(success)
             check_obsvs = current_obs
-            observations.append(torch.cat([*epch_observations], dim=0).unsqueeze(0))
+            observations.append(
+                th.cat([*epch_observations], dim=0).unsqueeze(0))
             actions.append(epch_actions)
-            
+
             epch_actions = []
             epch_observations = []
-        
+
         infos = transitions[i]['infos']
         if 'is_success' in infos:
             success = transitions[i]['infos']['is_success']
@@ -491,16 +531,16 @@ def parse_sampled_transitions(transitions, new_epoch, extractor):
 
         epch_actions.append(transitions[i]['acts'])
         epch_observations.append(current_obs.unsqueeze(0))
-        
-    observations.append(torch.cat([*epch_observations], dim=0).unsqueeze(0))
+
+    observations.append(th.cat([*epch_observations], dim=0).unsqueeze(0))
     actions.append(epch_actions)
     rewards.append(success)
 
-
-    actions = torch.tensor(np.array(actions), dtype=torch.float)
-    observations = torch.cat([*observations], dim=0).type(torch.float)
-    rewards = torch.tensor(np.array(rewards), dtype=torch.float)
+    actions = th.tensor(np.array(actions), dtype=th.float)
+    observations = th.cat([*observations], dim=0).type(th.float)
+    rewards = th.tensor(np.array(rewards), dtype=th.float)
     return actions, observations, rewards
+
 
 def sample_expert_transitions(policy, env, episodes):
 
@@ -514,42 +554,38 @@ def sample_expert_transitions(policy, env, episodes):
         unwrap=True,
         exclude_infos=False
     )
-    return rollout.flatten_trajectories(rollouts)   
+    return rollout.flatten_trajectories(rollouts)
 
-def count_parameters(model):
-    table = PrettyTable(["Modules", "Parameters"])
-    total_params = 0
-    for name, parameter in model.named_parameters():
-        if not parameter.requires_grad: continue
-        param = parameter.numel()
-        table.add_row([name, param])
-        total_params+=param
-    print(table)
-    print(f"Total Trainable Params: {total_params}")
-    return total_params
+# done
 
-import torch as th
 
-def make_partially_observed_seq(obs:th.Tensor, acts:th.Tensor, seq_len:int, act_space):
-    result = th.zeros(size=[obs.shape[0], seq_len, obs.shape[-1]+ act_space.shape[0]], device=obs.device)
-    #obs: batch, seq, dim
+def make_partially_observed_seq(obs: th.Tensor, acts: th.Tensor, seq_len: int, act_space):
+    result = th.zeros(size=[obs.shape[0], seq_len,
+                      obs.shape[-1] + act_space.shape[0]], device=obs.device)
+    # obs: batch, seq, dim
     result = fill_tensor(result, obs, start_dim=0)
     if acts is not None:
         result = fill_tensor(result, acts, start_dim=obs.shape[-1])
     return result, obs.shape[-1]
+# done
 
-def fill_tensor(tensorA:torch.Tensor, tensorB:torch.Tensor, start_dim:int):
+
+def fill_tensor(tensorA: th.Tensor, tensorB: th.Tensor, start_dim: int):
     shape = tensorB.shape
     tensorA[:shape[0], :shape[1], start_dim:start_dim+shape[2]] = tensorB
     return tensorA
+# done
+
 
 def add_max_val_to_dict(dict, key, val, tm):
     if key in dict:
-        dict[key] = torch.max(dict[key], val)
+        dict[key] = th.max(dict[key], val)
         if val > dict[key]:
-            dict[key + ' max'] = torch.tensor(tm)
+            dict[key + ' max'] = th.tensor(tm)
     else:
         dict[key] = val
+# done
+
 
 def calcMSE(a, b):
     return ((a.squeeze() - b.squeeze())**2).mean()

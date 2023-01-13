@@ -1,14 +1,12 @@
 import copy
-from locale import currency
-from typing import Dict, List, Optional, Tuple, Union
-from unittest import result
+from typing import Dict, Optional, Tuple, Union
 
 import numpy as np
 import torch
 from MetaWorld.searchTest.utils import make_partially_observed_seq
-from MetaWorld.utilsMW.model_setup_obj import ActiveCriticArgs
 from stable_baselines3.common.policies import BaseModel
 from LanguagePolicies.model_src.modelTorch import WholeSequenceActor, WholeSequenceCritic
+from MetaWorld.utilsMW.model_setup_obj import ActiveCriticArgs
 
 
 class ACPOptResult:
@@ -44,9 +42,9 @@ class ActiveCriticPolicy(BaseModel):
         self.max_steps = args_obj.opt_steps
         self.last_update = 0
         self.last_goal = None
-        self.seq_len = None
         self.current_step = 0
         self.args_obj = args_obj
+        self.reset_state()
 
     def predict(
         self,
@@ -60,6 +58,10 @@ class ActiveCriticPolicy(BaseModel):
         else:
             return self.predict_unobservable(observation, state, episode_start, deterministic)
 
+    def reset_state(self):
+        self.best_expected_success = None
+        self.scores = []
+
     def predict_observable(
         self,
         observation: Union[torch.Tensor, Dict[str, torch.Tensor]],
@@ -71,6 +73,8 @@ class ActiveCriticPolicy(BaseModel):
             observation).unsqueeze(1).to(self.args_obj.device)
 
         if (self.last_goal is None) or (self.args_obj.new_epoch(self.last_goal, vec_obsv)):
+            if self.best_expected_success is not None:
+                self.scores.append((self.best_expected_success > self.args_obj.optimisation_threshold).type(torch.bool))
             self.current_step = 0
             self.last_goal = vec_obsv
             self.action_seq = None
@@ -129,7 +133,7 @@ class ActiveCriticPolicy(BaseModel):
             if self.critic.model is not None:
                 self.critic.model.eval()
             gen_result = gen_result.detach()
-            while best_expected_mean < 0.95 and (step <= self.max_steps):
+            while best_expected_mean < self.args_obj.optimisation_threshold and (step <= self.max_steps):
 
                 critic_input, _ = make_partially_observed_seq(
                     obs=self.obs_seq, acts=opt_gen_result, seq_len=self.args_obj.epoch_len, act_space=self.action_space)
@@ -150,7 +154,7 @@ class ActiveCriticPolicy(BaseModel):
                     best_expected_success[improve_mask] = critic_result[improve_mask].detach(
                     )
                     best_trj[improve_mask] = opt_gen_result[improve_mask].detach()
-
+                self.best_expected_success = best_expected_success
                 best_expected_mean = best_expected_success.mean()
 
                 optimizer.zero_grad()

@@ -21,7 +21,7 @@ from MetaWorld.utilsMW.dataLoaderMW import TorchDatasetMWToy
 from MetaWorld.utilsMW.makeTrainingData import ToySimulation
 from MetaWorld.searchTest.toyEnvironment import check_outpt
 from LanguagePolicies.model_src.modelTorch import WholeSequenceActor
-from LanguagePolicies.utils.Transformer import TailorTransformer
+from LanguagePolicies.utils.Transformer import CriticTransformer
 from LanguagePolicies.utils.networkMeta import NetworkMeta
 
 from torch.utils.data import DataLoader
@@ -106,7 +106,7 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
 
     tailor_models = []
     for i in range(3):
-        tailor_models.append(TailorTransformer(model_setup=model_setup['tailor_transformer']))
+        tailor_models.append(CriticTransformer(model_setup=model_setup['tailor_transformer']))
     #tailor_model = TailorTransformer(model_setup=model_setup['tailor_transformer'])
     
     

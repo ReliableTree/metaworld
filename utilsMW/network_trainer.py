@@ -1,7 +1,3 @@
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
-from cProfile import label
-
 import os
 import sys
 from os import makedirs, path
@@ -12,7 +8,8 @@ import torch
 import torch.nn as nn
 from cv2 import add
 from gym.envs.mujoco import MujocoEnv
-from LanguagePolicies.model_src.modelTorch import WholeSequenceActor, WholeSequenceCritic
+from LanguagePolicies.model_src.modelTorch import (WholeSequenceActor,
+                                                   WholeSequenceCritic)
 from LanguagePolicies.utils.graphsTorch import TBoardGraphsTorch
 from MetaWorld.searchTest.utils import (parse_sampled_transitions,
                                         sample_expert_transitions)
@@ -30,6 +27,8 @@ class NetworkTrainer(nn.Module):
                  ):
         super().__init__()
         self.network_args = network_args_obj
+        self.env = env
+
         self.policy = ActiveCriticPolicy(
             observation_space=self.env.observation_space,
             action_space=self.env.action_space,
@@ -43,6 +42,7 @@ class NetworkTrainer(nn.Module):
         self.max_success_rate = 0
         self.extractor = network_args_obj.extractor
 
+        self.logname = network_args_obj.logname
         if self.logname.startswith("Intel$"):
             self.instance_name = self.logname.split("$")[1]
             self.logname = self.logname.split("$")[0]
@@ -50,7 +50,8 @@ class NetworkTrainer(nn.Module):
             self.instance_name = None
 
         if network_args_obj.tboard:
-            self.tboard = TBoardGraphsTorch(self.logname, data_path=network_args_obj.data_path)
+            self.tboard = TBoardGraphsTorch(
+                self.logname, data_path=network_args_obj.data_path)
         self.loss = nn.CrossEntropyLoss()
         self.global_best_loss = float('inf')
         self.global_best_loss_val = float('inf')
@@ -62,7 +63,6 @@ class NetworkTrainer(nn.Module):
         self.global_step = 0
         self.add_data = not network_args_obj.imitation_phase
 
-        self.env = env
         self.num_vals = 0
 
         self.train_data = TorchDatasetMW(device=network_args_obj.device)
@@ -70,7 +70,6 @@ class NetworkTrainer(nn.Module):
 
         self.train_loader = None
         self.val_loader = None
-
 
     def setDatasets(self, train_data: TorchDatasetMW, val_data: TorchDatasetMW, batch_size=32):
         if len(train_data) > 0:
@@ -88,7 +87,7 @@ class NetworkTrainer(nn.Module):
         for epoch in range(epochs):
             self.policy.eval()
             if self.add_data:
-                self.sample_new_episode(episodes=1)
+                self.sample_new_episode(episodes=1, add_data=True)
             self.policy.train()
             while model_step < self.network_args.n_steps:
                 model_step += len(self.train_data)
@@ -98,29 +97,30 @@ class NetworkTrainer(nn.Module):
                     self.train_data.onyl_positiv = False
                     for data in self.train_loader:
                         debug_dict = self.policy.critic.optimizer_step(data)
-                        self.write_tboard_scalar(debug_dict=debug_dict, train=True)
+                        self.write_tboard_scalar(
+                            debug_dict=debug_dict, train=True)
                         self.global_step += 1
-
 
                 if self.train_data.success.sum() > 0:
                     self.train_data.onyl_positiv = True
                     for data in self.train_loader:
                         debug_dict = self.policy.actor.optimizer_step(data)
-                        self.write_tboard_scalar(debug_dict=debug_dict, train=True)
+                        self.write_tboard_scalar(
+                            debug_dict=debug_dict, train=True)
                         self.global_step += 1
 
             model_step = 0
             self.num_vals += 1
             complete = (self.num_vals % self.network_args.complete_modulo == 0)
             print(f'logname: {self.logname}')
-            if complete:
-                self.runValidation(complete=complete)
-
+            self.runValidation(complete=complete)
 
     def sample_new_episode(self, episodes=1, add_data=True):
         self.policy.eval()
-        self.policy.return_mode = 1
-        transitions = sample_expert_transitions(self.policy, self.env, episodes)
+        self.policy.reset_state()
+        transitions = sample_expert_transitions(
+            self.policy, self.env, episodes)
+        expected_rewards = torch.tensor(*self.policy.scores)
         datas = parse_sampled_transitions(
             transitions=transitions, new_epoch=self.network_args.new_epoch, extractor=self.extractor)
         device_data = []
@@ -130,8 +130,7 @@ class NetworkTrainer(nn.Module):
         if add_data:
             self.add_data_to_loader(inpt_obs_opt=observations, trajectories_opt=actions,
                                     success_opt=rewards, ftrjs_opt=actions, episodes=episodes)
-        return actions, observations, rewards
-
+        return actions, observations, rewards, expected_rewards
 
     def torch2tf(self, inpt):
         if inpt is not None:
@@ -145,175 +144,122 @@ class NetworkTrainer(nn.Module):
         else:
             return None
 
-    def runvalidationTaylor(self, data, debug_dict={}, return_mode=0):
-        inpt, label, success = data
+    def analyze_critic_scores(self, success, expected_success):
+        success.reshape(-1)
         fail = ~success
+        expected_success = expected_success.reshape(-1)
+        expected_fail = ~ expected_success
 
-        for i, ts in enumerate(self.policy.critic):
-            print(f'inpt: {inpt.shape}')
-            expected_success = ts.forward(inpt)
-            #expected_success = self.tailor_modules[0].forward(taylor_inpt)
+        expected_success_float = expected_success.type(torch.float)
+        expected_fail_float = expected_fail.type(torch.float)
+        fail_float = fail.type(torch.float).reshape(-1)
+        success_float = success.type(torch.float).reshape(-1)
 
-            expected_success = expected_success.reshape(-1).type(torch.bool)
-            expected_fail = ~ expected_success
-            expected_success = expected_success.type(torch.float)
-            expected_fail = expected_fail.type(torch.float)
+        tp = (expected_success_float * success_float)[success == 1].mean()
+        if success_float.sum() == 0:
+            tp = torch.tensor(0)
+        fp = (expected_success_float * fail_float)[fail == 1].mean()
+        tn = (expected_fail_float * fail_float)[fail == 1].mean()
+        fn = (expected_fail_float * success_float)[success == 1].mean()
 
-            fail = fail.type(torch.float).reshape(-1)
-            success = success.type(torch.float).reshape(-1)
-            tp = (expected_success * success)[success == 1].mean()
-            if success.sum() == 0:
-                tp = torch.tensor(0)
-            fp = (expected_success * fail)[fail == 1].mean()
-            tn = (expected_fail * fail)[fail == 1].mean()
-            fn = (expected_fail * success)[success == 1].mean()
+        if self.policy.return_mode == 0:
+            add = ' '
+        elif self.policy.return_mode == 1:
+            add = ' optimized '
+        elif self.policy.return_mode == 2:
+            add = ' label '
 
-            if return_mode == 0:
-                add = ' '+str(i)
-            elif return_mode == 1:
-                add = ' optimized '+str(i)
-            elif return_mode == 2:
-                add = ' label '+str(i)
+        debug_dict = {}
 
-            debug_dict['true positive' + add] = tp
-            debug_dict['false positive' + add] = fp
-            debug_dict['true negative' + add] = tn
-            debug_dict['false negative' + add] = fn
-            debug_dict['tailor success' +
-                       add] = (expected_success == success).type(torch.float).mean()
-            debug_dict['tailor expected success' +
-                       add] = (expected_success).type(torch.float).mean()
+        debug_dict['true positive' + add] = tp
+        debug_dict['false positive' + add] = fp
+        debug_dict['true negative' + add] = tn
+        debug_dict['false negative' + add] = fn
+        debug_dict['tailor success' +
+                   add] = (expected_success == success).type(torch.float).mean()
+        debug_dict['tailor expected success' +
+                   add] = (expected_success).type(torch.float).mean()
 
-        return debug_dict
+        self.write_tboard_scalar(debug_dict=debug_dict, train=False)
 
     def runValidation(self, complete=False):
-            self.policy.eval()
-            if complete:
-                num_envs = self.network_args.eval_epochs
-                print("Running full validation...")
+        self.policy.eval()
+        if complete:
+            num_envs = self.network_args.eval_epochs
+            print("Running full validation...")
 
-            else:
-                num_envs = self.network_args.quick_eval_epochs
-
-            self.policy.return_mode = 0
-
-            actions, observations, success = self.sample_new_episode(
-                policy=self.policy, env=self.env, episodes=num_envs, add_data=False)
-            data_gen = (actions, observations, success.type(torch.bool))
-            print(f'num envs: {len(actions)}')
-            mean_success = success.mean()
-            fail = ~success.type(torch.bool)
-            print(f'mean success before: {mean_success}')
-            debug_dict = {'success rate generated': mean_success}
-            self.write_tboard_scalar(debug_dict=debug_dict, train=False)
-            if self.add_data:
-                self.policy.return_mode = 1
-                actions_opt, observations_opt, success_opt = self.sample_new_episode(
-                    policy=self.policy, env=self.env, episodes=num_envs, add_data=False)
-            else:
-                actions_opt, observations_opt, success_opt = actions, observations, success
-            data_opt = (actions_opt, observations_opt,
-                        success_opt.type(torch.bool))
-
-            if complete:
-                print('complete:')
-                self.policy.optim_run += 1
-                debug_dict = self.runvalidationTaylor(
-                    data=data_gen, return_mode=0)
-                self.write_tboard_scalar(debug_dict=debug_dict, train=False)
-                debug_dict = self.runvalidationTaylor(
-                    data=data_opt, return_mode=1)
-                self.write_tboard_scalar(debug_dict=debug_dict, train=False)
-
-            if len(success_opt) > 0:
-                mean_success_opt = success_opt.mean()
-            else:
-                mean_success_opt = 0
-            if mean_success_opt > self.last_mean_success:
-                policy.max_steps = policy.max_steps * 1.1
-                self.last_mean_success = mean_success_opt
-
-            fail_opt = ~success_opt.type(torch.bool)
-
-            '''if tailor_success_optimized * 0.8 > mean_success_opt:
-                policy.max_steps = policy.max_steps * 1.1
-            elif tailor_success_optimized < mean_success_opt:
-                policy.max_steps = max(policy.max_steps * 0.9, 5)'''
-
-            self.write_tboard_scalar(
-                {'num optimisation steps': torch.tensor(policy.max_steps)}, train=False)
-
-            print(f'mean success after: {mean_success_opt}')
-            debug_dict = {}
-            debug_dict['success rate optimized'] = mean_success_opt
-            debug_dict['improved success rate'] = mean_success_opt - \
-                mean_success
-            if mean_success_opt - mean_success > self.best_improved_success:
-                self.best_improved_success = mean_success_opt - mean_success
-                self.saveNetworkToFile(
-                    add=self.logname + "/best_improved/", data_path=self.data_path)
-
-            num_improved = (success_opt * fail).type(torch.float).mean()
-            num_deproved = (success * fail_opt).type(torch.float).mean()
-            debug_dict['rel number improved'] = num_improved
-            debug_dict['rel number failed'] = num_deproved
-
-            self.write_tboard_scalar(
-                debug_dict=debug_dict, train=not complete, step=self.global_step)
-
-            if mean_success > self.max_success_rate:
-                self.max_success_rate = mean_success
-            else:
-                pass
-                # self.model.load_state_dict(self.model_state_dict)
-
-        val_loss = []
-        if self.val_loader is not None:
-            for step, (d_in, d_out) in enumerate(self.val_loader):
-                loss = self.step(d_in, d_out, train=False)
-                val_loss.append(loss)
-                if quick:
-                    break
         else:
-            val_loss = [0]
+            num_envs = self.network_args.quick_eval_epochs
+
+        self.policy.return_mode = 0
+
+        actions, observations, success, expected_rewards = self.sample_new_episode(
+            episodes=num_envs, add_data=False)
+        data_gen = (actions, observations, success.type(torch.bool))
+        mean_success = success.mean()
+        fail = ~success.type(torch.bool)
+        print(f'mean success before: {mean_success}')
+        debug_dict = {'success rate generated': mean_success}
+        self.write_tboard_scalar(debug_dict=debug_dict, train=False)
+
+        self.analyze_critic_scores(success, expected_rewards)
+
+        if self.add_data:
+            self.policy.return_mode = 1
+            actions_opt, observations_opt, success_opt, expected_rewards_opt = self.sample_new_episode(
+                episodes=num_envs, add_data=False)
+            self.analyze_critic_scores(success_opt, expected_rewards_opt)
+
+        fail_opt = ~success_opt.type(torch.bool)
+
+        self.write_tboard_scalar(
+            {'num optimisation steps': torch.tensor(self.policy.max_steps)}, train=False)
+
+        mean_success_opt = (success_opt.type(torch.float)).mean()
+        print(f'mean success after: {mean_success_opt}')
+        debug_dict = {}
+        debug_dict['success rate optimized'] = mean_success_opt
+        debug_dict['improved success rate'] = mean_success_opt - \
+            mean_success
+        if mean_success_opt - mean_success > self.best_improved_success:
+            self.best_improved_success = mean_success_opt - mean_success
+            self.saveNetworkToFile(
+                add=self.logname + "/best_improved/", data_path=self.data_path)
+
+        num_improved = (success_opt * fail).type(torch.float).mean()
+        num_deproved = (success * fail_opt).type(torch.float).mean()
+        debug_dict['rel number improved'] = num_improved
+        debug_dict['rel number failed'] = num_deproved
+
+        self.write_tboard_scalar(
+            debug_dict=debug_dict, train=not complete, step=self.global_step)
+
         if self.use_tboard:
+            success = success.type(torch.bool)
+            success_opt = success_opt.type(torch.bool)
+            self.plot_with_mask(
+                label=actions, trj=actions, inpt=observations, mask=success, name='success')
 
-            if not quick:
-                success = success.type(torch.bool)
-                success_opt = success_opt.type(torch.bool)
-                self.plot_with_mask(
-                    label=actions, trj=actions, inpt=observations, mask=success, name='success')
+            fail = ~success
+            fail_opt = ~success_opt
+            self.plot_with_mask(label=actions, trj=actions,
+                                inpt=observations, mask=fail, name='fail')
 
-                fail = ~success
-                fail_opt = ~success_opt
-                self.plot_with_mask(label=actions, trj=actions,
-                                    inpt=observations, mask=fail, name='fail')
+            fail_to_success = success_opt & fail
+            self.plot_with_mask(label=actions, trj=actions, inpt=observations,
+                                mask=fail_to_success, name='fail to success', opt_trj=actions_opt)
 
-                fail_to_success = success_opt & fail
-                self.plot_with_mask(label=actions, trj=actions, inpt=observations,
-                                    mask=fail_to_success, name='fail to success', opt_trj=actions_opt)
+            success_to_fail = success & fail_opt
+            self.plot_with_mask(label=actions, trj=actions, inpt=observations,
+                                mask=success_to_fail, name='success to fail', opt_trj=actions_opt)
 
-                success_to_fail = success & fail_opt
-                self.plot_with_mask(label=actions, trj=actions, inpt=observations,
-                                    mask=success_to_fail, name='success to fail', opt_trj=actions_opt)
+            fail_to_fail = fail & fail_opt
+            self.plot_with_mask(label=actions, trj=actions, inpt=observations,
+                                mask=fail_to_fail, name='fail to fail', opt_trj=actions_opt)
 
-                fail_to_fail = fail & fail_opt
-                self.plot_with_mask(label=actions, trj=actions, inpt=observations,
-                                    mask=fail_to_fail, name='fail to fail', opt_trj=actions_opt)
-
-                #print(f'label-check: {label[success_to_fail][0]}')
-                #print(f'label-opt-check: {label_opt[success_to_fail][0]}')
-
-        loss = np.mean(val_loss)
-        if pnt:
-            print("  Validation Loss: {:.6f}".format(loss))
-        if not quick:
-            if loss < self.global_best_loss_val:
-                self.global_best_loss_val = loss
-            if self.use_tboard:
-                self.saveNetworkToFile(
-                    add=self.logname + "/last/", data_path=self.data_path)
-        return np.mean(val_loss)
+        if self.use_tboard:
+            self.saveNetworkToFile(
+                add=self.logname + "/last/", data_path=self.data_path)
 
     def add_data_to_loader(self, inpt_obs_opt, trajectories_opt, success_opt, ftrjs_opt, episodes):
         if self.add_data:
@@ -364,8 +310,6 @@ class NetworkTrainer(nn.Module):
             self.createGraphsMW(d_in=1, d_out=label, result=trj, toy=False,
                                 inpt=inpt, name=name, opt_trj=opt_trj, window=0)
 
- 
-
     def loadingBar(self, count, total, size, addition="", end=False):
         if total == 0:
             percent = 0
@@ -378,7 +322,6 @@ class NetworkTrainer(nn.Module):
         if end:
             print("")
         sys.stdout.flush()
-
 
     def createGraphsMW(self, d_in, d_out, result, save=False, name_plot='', epoch=0, toy=True, inpt=None, name='Trajectory', opt_trj=None, window=0):
         target_trj = d_out

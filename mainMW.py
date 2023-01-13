@@ -16,7 +16,7 @@ parent_path = str(Path(__file__).parent.absolute())
 parent_path += '/../'
 sys.path.append(parent_path)
 from LanguagePolicies.model_src.modelTorch import WholeSequenceActor
-from LanguagePolicies.utils.Transformer import TailorTransformer
+from LanguagePolicies.utils.Transformer import CriticTransformer
 from LanguagePolicies.utils.networkMeta import NetworkMeta
 import hashids
 import time
@@ -74,7 +74,7 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
     #tailor_model = TailorTransformer(model_setup=model_setup['tailor_transformer'])
 
     #tailor_models = [tailor_model]
-    tailor_models=[TailorTransformer(model_setup=model_setup['tailor_transformer']) for i in range(1)]
+    tailor_models=[CriticTransformer(model_setup=model_setup['tailor_transformer']) for i in range(1)]
     data = TorchDatasetMW(path=path_dict['META_WORLD'], device=device, n=100)
 
     #train_indices = torch.arange(10)+20

@@ -1,10 +1,10 @@
+import imp
 from pyclbr import Function
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from typing import Optional, Union
 
-from PyTorchRL.utils import torch
-from LanguagePolicies.model_src.modelTorch import WholeSequenceActor, WholeSequenceCritic, WholeSequenceModel
-
+import torch
+from LanguagePolicies.utils.Transformer import TransformerModel, CriticTransformer, ModelSetup
 
 class NetworkSetup:
     def __init__(self) -> None:
@@ -23,35 +23,18 @@ class NetworkSetup:
         self.critic_nn.d_result = 1
         self.critic_nn.seq_len = 100
         self.critic_nn.optimizer_class = torch.optim.Adam
-        self.model_class:WholeSequenceModel = WholeSequenceCritic
+        self.critic_nn.model_class = CriticTransformer
         
 
 
-class ModelSetup:
-    def __init__(self) -> None:
-        self.use_layernorm = False
-        self.upconv = True
-        self.num_upconvs = 5
-        self.stride = 3
-        self.d_output = 4
-        self.nhead = 4
-        self.d_hid = 512
-        self.d_model = 512
-        self.nlayers = 4
-        self.seq_len = 100
-        self.dilation = 2
-        self.d_result = None
-        self.ntoken = -1
-        self.dropout = 0.2
-        self.lr = None
-        self.device = 'cuda'
-        self.optimizer_class = torch.optim.AdamW
-        self.optimizer_kwargs = {}
-        self.model_class:WholeSequenceModel = WholeSequenceActor
+
         
 class ActiveCriticArgs:
     def __init__(self) -> None:
         pass
+
+    def set_critic_optimisation_threshold(self, threshold:float):
+        self.optimisation_threshold = threshold
 
     def set_quick_eval_epochs(self, quick_eval_epochs:int):
         self.quick_eval_epochs = quick_eval_epochs
@@ -80,8 +63,8 @@ class ActiveCriticArgs:
     def set_log_name(self, logname:str):
         self.logname = logname
 
-    def set_mlr(self, mlr:float):
-        self.mlr = mlr
+    def set_critic_search_lr(self, cslr:float):
+        self.cslr = cslr
 
     def set_meta_optimizer_lr(self, mo_lr:float):
         self.network_setup.critic_nn.lr = mo_lr
