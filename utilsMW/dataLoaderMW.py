@@ -12,6 +12,9 @@ class TorchDatasetMW(torch.utils.data.Dataset):
         self.label = torch.load(path_label).to(torch.float32).to(device)[-n:]
         self.phase = torch.load(path_phase).to(torch.float32).to(device)[-n:]
 
+        print(f'self.data: {self.data.shape}')
+        print(f'self.label: {self.label.shape}')
+
         #self.data = torch.cat((self.data, self.phase.unsqueeze(-1)), dim=-1)
 
     def __len__(self):

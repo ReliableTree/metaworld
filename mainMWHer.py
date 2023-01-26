@@ -63,6 +63,7 @@ def setupModel(device , epochs ,  batch_size, path_dict , logname , model_path, 
 
     
     #tailor_models=[]
+    print('asd')
     train_data = HERDatasetBaseline(path='/home/hendrik/Documents/master_project/Code/MasterProject/data_fetch_random_100.npz', device='cuda', num_ele=10)
 
     #train_indices = torch.arange(10)+20
@@ -141,6 +142,7 @@ if __name__ == '__main__':
         hid             = hashids.Hashids()
         logname         = hid.encode(int(time.time() * 1000000))
         print(f'logname: {logname}')
+        logname = 'Reload best achieved again'
         network = setupModel(device=device, epochs = epochs, batch_size = batch_size, path_dict = path_dict, logname=logname, model_path=model_path, tboard=tboard, model_setup=model_setup, train_size=train_size)
         print(f'end saving: {path_dict["MODEL_PATH"]}')
         torch.save(network.state_dict(), path_dict['MODEL_PATH'])
