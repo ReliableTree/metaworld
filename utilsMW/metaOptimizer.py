@@ -7,8 +7,6 @@ import torch
 import torch.nn as nn
 import copy
 
-from zmq import device
-
 def loss_fct_proto(inpt, label):
     return ((inpt - label)**2)
 
