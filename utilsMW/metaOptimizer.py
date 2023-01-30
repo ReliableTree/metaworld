@@ -135,12 +135,12 @@ class MetaModule():
         elif self.return_mode == 1:
             #opt_inpt = torch.clone(inpt.detach())
             opt_gen_result = torch.clone(gen_result.detach())
-            opt_gen_result.requires_grad_(True)
+            #opt_gen_result.requires_grad_(True)
             #optimizer =  torch.optim.Adam(self.main_signal.model.parameters(), lr=self.lr)
             #optimizer = torch.optim.SGD(self.main_signal.model.parameters(), lr=self.lr)
             #optimizer = torch.optim.SGD([opt_gen_result], lr=self.lr)
-            optimizer = torch.optim.Adam([opt_gen_result], lr=self.lr)
-            #optimizer = torch.optim.AdamW(self.main_signal.model.parameters(), lr=self.lr)
+            #optimizer = torch.optim.Adam([opt_gen_result], lr=self.lr)
+            optimizer = torch.optim.AdamW(self.main_signal.model.parameters(), lr=self.lr)
 
             best_expected_success = None
             best_expected_mean = torch.tensor(float('inf'))
@@ -175,7 +175,7 @@ class MetaModule():
                 #tailor_loss = tailor_loss + change_trj_loss
                 tailor_loss.backward()
                 optimizer.step()
-                #opt_gen_result = self.main_signal.forward(inpt)['gen_trj']
+                opt_gen_result = self.main_signal.forward(inpt)['gen_trj']
                 tailor_after_inpt = {'result':opt_gen_result, 'inpt':inpt, 'original':gen_result}
                 neg_log_tailor_results_after = torch.zeros(inpt.size(0), device=expected_succes_before.device)
                 for i, ts in enumerate(self.tailor_signals):
