@@ -6,6 +6,10 @@ import higher
 import torch
 import torch.nn as nn
 import copy
+from active_critic.utils.gym_utils import new_epoch_pap, ReductiveExtractor
+from typing import Dict, Optional, Tuple, Union
+import torch as th
+import numpy as np
 
 def loss_fct_proto(inpt, label):
     return ((inpt - label)**2)
@@ -69,7 +73,7 @@ class TaylorSignalModule(SignalModule):
         return loss, loss_positive, loss_negative
 
 class MetaModule():
-    def __init__(self, main_signal, tailor_signals, lr, return_mode=0, writer=None, device='cuda'):
+    def __init__(self, main_signal, tailor_signals, lr, extractor=ReductiveExtractor(), new_epoch=new_epoch_pap, return_mode=0, writer=None, device='cuda'):
         self.main_signal = main_signal
         self.tailor_signals = tailor_signals
         self.lr = lr
@@ -79,6 +83,10 @@ class MetaModule():
         self.max_steps =5
         self.last_update = 0
         self.device = device
+        self.extractor = extractor
+        self.new_epoch = new_epoch
+        self.seq_len = 200
+        self.reset()
 
     def eval(self):
         for ts in self.tailor_signals:
@@ -87,6 +95,37 @@ class MetaModule():
     def train(self):
         for ts in self.tailor_signals:
             ts.model.train()
+
+    def reset(self):
+        self.last_goal = None
+        self.current_step = 0
+
+    def reset_epoch(self, vec_obsv: th.Tensor):
+        self.current_step = 0
+        self.last_goal = vec_obsv
+        self.current_result = None
+
+    def predict(
+            self,
+            observation: Union[th.Tensor, Dict[str, th.Tensor]],
+            state: Optional[Tuple[np.ndarray, ...]] = None,
+            episode_start: Optional[np.ndarray] = None,
+            deterministic: bool = False,
+        ) -> th.Tensor:
+
+        vec_obsv = self.extractor.forward(features=observation).to(self.device).unsqueeze(1)
+        if (self.last_goal is None) or (self.new_epoch(self.last_goal, vec_obsv)):
+            self.reset_epoch(vec_obsv=vec_obsv)
+            self.current_result = None
+        else:
+            self.current_step += 1
+        #self.obs_seq[:, self.current_step:self.current_step+1, :] = vec_obsv
+        self.obs_seq = vec_obsv.repeat([1, self.seq_len, 1]).type(th.float)
+        if self.current_result is None:
+            self.current_result = self.forward(
+                inpt=self.obs_seq
+            )
+        return self.current_result['gen_trj'][:, self.current_step].detach().cpu().numpy()
     
     def forward(self, inpt, epochs = 100):
         main_signal_state_dict= copy.deepcopy(self.main_signal.model.state_dict())

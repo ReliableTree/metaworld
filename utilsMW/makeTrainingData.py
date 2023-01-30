@@ -158,8 +158,11 @@ class SuccessSimulation():
             f_result = result_pol['inpt_trj'].detach()
             np_result = result.cpu().detach().numpy()
 
+            max_reward = 0
             for a in np_result[0]:
                 obs, reward_policy, done, info = env.step(a)  # Step the environoment with the sampled random action
+                if reward_policy > max_reward:
+                    max_reward = reward_policy
                 #env.render()
 
             obs = env.reset()  # Reset environment
@@ -170,17 +173,17 @@ class SuccessSimulation():
                 a = gt_policy.get_action(obs)
                 obs, reward, done, info = env.step(a)
                 label.append(torch.tensor(a, dtype=torch.float32))
-            if reward > 0.95:
+            if reward == 10:
                 trajectories += [result]
                 inpt_obs.append(obs_arr)
-                if reward_policy >= 0.95:
+                if max_reward == 10:
                     success.append(torch.ones(1, device=policy.device, dtype=torch.bool))
                 else:
                     success.append(torch.zeros(1, device=policy.device, dtype=torch.bool))
                 label = torch.cat([*label], dim = 0).reshape(-1,a.shape[0])
                 labels.append(label)
                 f_results += [f_result]
-        if len(label) > 0:
+        if len(labels) > 0:
             labels = torch.cat([*labels], dim=0).reshape(-1, labels[0].size(0), labels[0].size(1)).to(policy.device)
             trajectories = torch.cat([*trajectories], dim=0)
             inpt_obs = torch.cat([*inpt_obs], dim=0)

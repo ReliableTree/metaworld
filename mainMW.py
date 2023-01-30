@@ -20,6 +20,7 @@ from utilsMW.dataLoaderMW import TorchDatasetMW
 from torch.utils.data import DataLoader
 from gym import logger
 from utilsMW.makeTrainingData import SuccessSimulation
+from active_critic.utils.gym_utils import sample_expert_transitions, make_vec_env, parse_sampled_transitions, ReductiveExtractor
 
 
 
@@ -146,6 +147,8 @@ if __name__ == '__main__':
         logname         = hid.encode(int(time.time() * 1000000))
         print(f'logname: {logname}')
         network = setupModel(device=device, epochs = epochs, batch_size = batch_size, path_dict = path_dict, logname=logname, model_path=model_path, tboard=tboard, model_setup=model_setup, train_size=train_size)
-        print(f'end saving: {path_dict["MODEL_PATH"]}')
-        torch.save(network.state_dict(), path_dict['MODEL_PATH'])
 
+        env, _ = make_vec_env('pickplace', 1, 200)
+        transitions = sample_expert_transitions(network.meta_module.predict, env, 2)
+        actions, observations, rewards = parse_sampled_transitions(transitions, ReductiveExtractor(), 200, 'cuda')
+        print(f'rewards: {rewards.shape}')
