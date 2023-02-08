@@ -45,7 +45,7 @@ import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 
 META_LEARNING_RATE = 1e-4
-LR_META_OPTIMIZED = 1e-2
+LR_META_OPTIMIZED = 1e-4#1e-2
 
 
 def count_parameters(model):
